@@ -1049,6 +1049,7 @@ function buildPassage(diff, planOverride){
                 topicId:topic.id, topicName:topic.name, emoji:topic.emoji, diff,
                 titleEn, titleCn, paras };
     p.wordCount = p.paras.flat().reduce((n,s)=>n + s.en.trim().split(/\s+/).length, 0);
+    p.subjectEn = dEn.subject || '';   /* 主旨题正确项：本文主题短语 */
     last = p;
     const sig = p.paras.flat().map(s=>s.en).join('~');
     if(!seen.includes(sig)){ pushSeen(sig); return p; }
@@ -1413,8 +1414,9 @@ async function aiBuildReading(){
   }[diffNow]||{minW:560, minP:8, pTxt:'8-9个自然段', wTxt:'560-700词', lvl:'考研英语（一）难度：学术词汇丰富，长难句'};
   const MINW=SPEC.minW, MINP=SPEC.minP;
   const sys='你是考研英语命题专家。只输出严格JSON对象，禁止输出任何解释、前言或markdown代码块标记。';
-  const base='随机生成一篇考研英语阅读理解文章。要求：主题随机（科技/生态/社会/心理/经济/教育/医疗等），'+SPEC.pTxt+'，全文'+SPEC.wTxt+'（硬性标准：段数少于'+MINP+'段或总词数低于'+MINW+'词视为无效输出，将被判不合格；每段至少4-6句、每句15-30词，篇幅宁多勿少）；词汇与句式难度：'+SPEC.lvl+'（词汇难度必须与考试层级严格匹配，不得超纲或降级）；每段给准确中文翻译；另从文中选10-14个与该难度匹配的高频词给中文释义。';
-  const tail='输出JSON格式：{"title":"英文标题","titleCn":"中文标题","paras":[{"sents":[{"en":"英文句","cn":"中文句"},中间若干句]}],"words":[{"w":"单词","cn":"词性. 释义"}]}。'+
+  const base='随机生成一篇考研英语阅读理解文章并配套命题。要求：主题随机（科技/生态/社会/心理/经济/教育/医疗等），'+SPEC.pTxt+'，全文'+SPEC.wTxt+'（硬性标准：段数少于'+MINP+'段或总词数低于'+MINW+'词视为无效输出，将被判不合格；每段至少4-6句、每句15-30词，篇幅宁多勿少）；词汇与句式难度：'+SPEC.lvl+'（词汇难度必须与考试层级严格匹配，不得超纲或降级）；每段给准确中文翻译；另从文中选10-14个与该难度匹配的高频词给中文释义。'+
+    '命题要求：根据文章内容出5道阅读理解选择题，题型覆盖 1道主旨大意题 + 2道细节理解题 + 1道推理判断题 + 1道词义猜测题；题干和四个选项全部用英文，选项有干扰性但只有一个正确答案，答案必须能从文章中找到依据；每题给中文解析（说明定位依据与排除理由）。';
+  const tail='输出JSON格式：{"title":"英文标题","titleCn":"中文标题","paras":[{"sents":[{"en":"英文句","cn":"中文句"},中间若干句]}],"words":[{"w":"单词","cn":"词性. 释义"}],"qs":[{"kind":"题型（主旨大意/细节理解/推理判断/词义猜测/作者态度）","stem":"英文题干","opts":["四个英文选项"],"ans":0到3的正确选项下标,"why":"中文解析"} 共5题]}。'+
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+(attempt===1?' 再次强调：必须至少'+MINP+'个自然段、全文'+MINW+'词以上，不许偷工减料，篇幅宁可偏长也不要只写几段。':'')+tail;
@@ -1431,8 +1433,17 @@ async function aiBuildReading(){
     if(wc<MINW) continue;   /* 段数或字数不达标：重试一次，仍不足则返回 null 走本地引擎 */
     const words=(j.words||[]).filter(function(w){ return w&&w.w; }).slice(0,14)
       .map(function(w){ return {w:String(w.w), cn:String(w.cn||'')}; });
+    /* AI 命题的阅读理解题：校验结构（题干 + 4 选项 + 合法答案下标），不足 4 题则不附带 */
+    const qs=(j.qs||[]).filter(function(q){
+      return q && q.stem && q.opts && q.opts.length===4 &&
+             q.opts.every(function(o){ return o && String(o).trim(); }) &&
+             typeof q.ans==='number' && q.ans>=0 && q.ans<4;
+    }).slice(0,5).map(function(q){
+      return {kind:String(q.kind||'阅读'), stem:String(q.stem).trim(),
+              opts:q.opts.map(function(o){ return String(o).trim(); }), ans:q.ans, why:String(q.why||'')};
+    });
     return {titleEn:String(j.title||'AI Reading'), titleCn:String(j.titleCn||''),
-            paras:paras, words:words, src:'ai'};
+            paras:paras, words:words, qs:(qs.length>=4?qs:[]), src:'ai'};
   }
   return null;
 }
@@ -1673,6 +1684,107 @@ function makeWordQ(s,w){
   const opts=shuffle([w.cn].concat(others));
   return {type:'词汇', prompt:'句中 “'+w.w+'” 一词的含义最接近：', body:s.en, options:opts, ans:opts.indexOf(w.cn)};
 }
+/* ---------- 基于文章内容的阅读理解题（主旨/细节/词义，均为真题题型） ---------- */
+/* 主旨大意题：正确项=本文主题短语，干扰项=其他题材随机生成的主题短语 */
+function makeMainQ(p){
+  if(!p.subjectEn) return null;
+  const wrong=[];
+  const others=shuffle(TOPICS.filter(t=>t.id!==p.topicId));
+  for(const t of others){
+    if(wrong.length>=3) break;
+    try{
+      const e=makeEntities(t);
+      const dict=buildDicts(e);          /* 实体值是 {en,cn} 对象，需转字符串 */
+      const sub=dict.dEn.subject;
+      if(sub && sub!==p.subjectEn){
+        wrong.push(sub.charAt(0).toUpperCase()+sub.slice(1));
+      }
+    }catch(err){}
+  }
+  if(wrong.length<3) return null;
+  const correct=p.subjectEn.charAt(0).toUpperCase()+p.subjectEn.slice(1);
+  const opts=shuffle([correct].concat(wrong.slice(0,3)));
+  return {type:'主旨', prompt:'What is the passage mainly about?', body:'（根据全文内容判断）',
+          options:opts, ans:opts.indexOf(correct)};
+}
+/* 提取句中的数字事实（金额/百分比/年份/数值） */
+function numFacts(en){
+  const out=[];
+  let m;
+  if((m=en.match(/\$[\d,\.]+\s*(?:billion|million|trillion)/i))) out.push({kind:'money', val:m[0]});
+  else if((m=en.match(/\d+(?:\.\d+)?\s*percent/i))) out.push({kind:'pct', val:m[0]});
+  else if((m=en.match(/\b(?:19|20)\d{2}\b/))) out.push({kind:'year', val:m[0]});
+  else if((m=en.match(/\b\d[\d,]{1,6}\b/))) out.push({kind:'num', val:m[0]});
+  return out;
+}
+/* 数字变形干扰项（×2、÷10、±20% 等，保持格式一致） */
+function perturbNum(val, kind){
+  const variants=[];
+  const push=(v)=>{ if(v && v!==val && variants.indexOf(v)<0) variants.push(v); };
+  if(kind==='money'){
+    const m=val.match(/\$([\d,\.]+)\s*(billion|million|trillion)/i);
+    const unit=m[2].toLowerCase();
+    const n=parseFloat(m[1].replace(/,/g,''));
+    const fmt=(x)=>'$'+(x%1?x.toFixed(1):x)+' '+unit;
+    push(fmt(n*2)); push(fmt(Math.max(0.1,n/10))); push(fmt(n*5));
+  } else if(kind==='pct'){
+    const n=parseFloat(val);
+    push((Math.min(96,n+21)).toFixed(n%1?1:0)+' percent');
+    push((Math.max(2,Math.round(n/3)))+' percent');
+    push((Math.min(98,n+44))+' percent');
+  } else if(kind==='year'){
+    const n=parseInt(val,10);
+    push(String(n-10)); push(String(n+9)); push(String(n-24));
+  } else {
+    const n=parseInt(val.replace(/,/g,''),10);
+    const fmt=(x)=>x>=1000?String(x):String(x);
+    push(fmt(n*10)); push(fmt(Math.max(1,Math.round(n/10)))); push(fmt(Math.round(n*1.4)));
+  }
+  return variants;
+}
+/* 细节理解题：原文数字事实句 → 三个数字被篡改的干扰句，只有原句为真 */
+function makeDetailQ(s){
+  const facts=numFacts(s.en);
+  if(!facts.length) return null;
+  const f=facts[0];
+  const vars=perturbNum(f.val, f.kind);
+  if(vars.length<3) return null;
+  const correct=s.en;
+  const wrong=vars.map(v=>s.en.split(f.val).join(v));
+  if(new Set([correct].concat(wrong)).size<4) return null;
+  const opts=shuffle([correct].concat(wrong));
+  return {type:'细节', prompt:'According to the passage, which of the following statements is correct?',
+          body:'（依据文中数据判断）', options:opts, ans:opts.indexOf(correct)};
+}
+/* 组卷：主旨 1 + 数字细节 2 + 词义/细节补足至 5 题，全部基于文章内容 */
+function buildCompQuiz(p){
+  const sents=[]; p.paras.forEach(pa=>pa.forEach(s=>sents.push(s)));
+  const items=[];
+  const main=makeMainQ(p);
+  if(main) items.push(main);
+  /* 细节题：取不同段落里带数字的事实句 */
+  const usedSent=new Set();
+  for(const s of shuffle(sents)){
+    if(items.filter(x=>x.type==='细节').length>=2) break;
+    if(usedSent.has(s)) continue;
+    const dq=makeDetailQ(s);
+    if(dq){ items.push(dq); usedSent.add(s); }
+  }
+  /* 词义猜测题（上下文猜词）补位 */
+  for(const s of shuffle(sents)){
+    if(items.length>=5) break;
+    if(usedSent.has(s)) continue;
+    const w=findGlossWord(s.en);
+    if(w){ items.push(makeWordQ(s,w)); usedSent.add(s); }
+  }
+  /* 翻译题兜底（极少触发） */
+  for(const s of shuffle(sents)){
+    if(items.length>=5) break;
+    if(usedSent.has(s)) continue;
+    items.push(makeTransQ(s,sents)); usedSent.add(s);
+  }
+  return items.slice(0,5);
+}
 function buildQuiz(p){
   const sents=[]; p.paras.forEach(pa=>pa.forEach(s=>sents.push(s)));
   const items=[];
@@ -1692,7 +1804,20 @@ function buildQuiz(p){
 let quiz=null;
 function openQuiz(){
   if(!curPassage) return;
-  quiz={items:buildQuiz(curPassage), idx:0, submitted:false};
+  /* 题目来源优先级：AI 出题（随文章生成）→ 本地文章理解题（主旨/细节/词义）→ 旧兜底题 */
+  let items=null;
+  if(curPassage.qs && curPassage.qs.length>=4){
+    items=curPassage.qs.map(q=>({
+      type:(q.kind||'阅读')+'题', prompt:String(q.stem||''), body:'',
+      options:(q.opts||[]).map(o=>String(o)), ans:Number(q.ans)||0, why:String(q.why||'')
+    }));
+  }
+  if(!items || items.length<4){
+    const comp=buildCompQuiz(curPassage);
+    items=(items||[]).concat(comp).slice(0,5);
+  }
+  if(items.length<4){ items=buildQuiz(curPassage); }   /* 极端兜底 */
+  quiz={items:items, idx:0, submitted:false};
   quiz.answers=new Array(quiz.items.length).fill(null);
   showOnly('quiz');
   renderQuestion();
@@ -1777,7 +1902,7 @@ function renderQuizDone(){
     });
     d.appendChild(opts);
     const ans=document.createElement('div'); ans.className='qRevAns';
-    ans.textContent='正确答案 '+'ABCD'[q.ans]+' ｜ 你的答案：'+(q.your||'未作答');
+    ans.textContent='正确答案 '+'ABCD'[q.ans]+' ｜ 你的答案：'+(q.your||'未作答')+(q.why?'\n📖 解析：'+q.why:'');
     d.appendChild(ans);
     list.appendChild(d);
   });
@@ -2809,7 +2934,7 @@ async function generateAndShow(){
       aiHistPush('read', ai.titleEn);
       var p={titleEn:ai.titleEn, titleCn:ai.titleCn, paras:ai.paras, wordCount:words, source:'ai',
              topicName:'AI 生成', emoji:'🤖', diff:curDiff, id:'ai'+Date.now().toString(36),
-             extraWords:ai.words};
+             extraWords:ai.words, qs:ai.qs||[]};
       bumpStats(words); recordHistory(p);
       renderPassage(p); showReader(); setHash('#read');
       return;
