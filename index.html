@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#16130f">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="stylesheet" href="assets/css/app.css?v=11">
+<title>研途阅读 · 考研英语阅读生成器</title>
+</head>
+<body class="">
+
+<!-- 顶栏：题名 + 字号 + 主题 -->
+<header id="topbar">
+  <div class="tbSeal" aria-hidden="true">研</div>
+  <div class="tbBrand"><b>研途阅读</b><span>考研英语 · 书房</span></div>
+  <div class="tbTitle" id="sceneTitle">工作台</div>
+  <div class="tbTools">
+    <button class="inkBtn" id="fsBtn" title="正文字号">Aa</button>
+    <button class="inkBtn" id="themeBtn" title="深色 / 浅色">🌙</button>
+  </div>
+</header>
+
+<!-- 书架侧栏（宽屏）/ 底栏（窄屏） -->
+<nav id="shelf">
+  <button class="shelfItem on" id="shelfHome"><i>🏠</i><span>工作台</span></button>
+  <button class="shelfItem" id="shelfRead"><i>📖</i><span>阅读</span></button>
+  <button class="shelfItem" id="shelfWords"><i>🔤</i><span>背词</span></button>
+  <button class="shelfItem" id="shelfCloze"><i>🧩</i><span>填空</span></button>
+  <button class="shelfItem" id="shelfSpeak"><i>🎙️</i><span>跟读</span></button>
+  <button class="shelfItem" id="shelfMe"><i>⭐</i><span>书房</span></button>
+</nav>
+
+<main id="stage">
+
+  <!-- AI 生成中 -->
+  <div id="aiLoad">
+    <div class="aiCard">
+      <div class="spin"></div>
+      <b id="aiKind">AI 生成中</b>
+      <div class="aiSec" id="aiSec">0s</div>
+      <button id="aiCancel">取消（改用本地生成）</button>
+    </div>
+  </div>
+
+  <!-- 工作台（首页） -->
+  <section id="home">
+    <div class="deskGreet">
+      <h1>今日研读</h1>
+      <p id="greetDate">—</p>
+    </div>
+
+    <div class="deskGrid">
+      <!-- 左：生成卷宗 -->
+      <div class="scrollBox">
+        <div class="scrollHead">誊一份新卷 · 选材</div>
+        <div class="chips" id="topicChips"></div>
+
+        <div class="inkLabel">难度 / 考试</div>
+        <div class="seg" id="diffSeg">
+          <button data-v="cet4">四级</button>
+          <button data-v="cet6">六级</button>
+          <button data-v="std" class="on">考研标准</button>
+          <button data-v="plus" class="">考研强化</button>
+        </div>
+
+        <div class="inkLabel">内容生成方式</div>
+        <div class="seg" id="aiSeg">
+          <button data-v="ai" class="on">🌐 AI 联网生成</button>
+          <button data-v="local">📦 本地离线生成</button>
+        </div>
+
+        <details class="cfg" id="aiCfgBox">
+          <summary>⚙️ AI 接口设置（免费方案，填一次永久保存）</summary>
+          <div class="cfgNote">
+            🟢 已接入 <b>WorkBuddy 云端 AI</b>：免注册、免 API Key，默认最高优先级，无需任何配置。<br>
+            如需改用其他服务商：点下面任意服务商按钮（自动填好地址和模型）→
+            去对应官网注册并创建 <b>API Key</b> 粘贴到密钥栏 →
+            点「测试连通」。
+          </div>
+          <div class="cfgPresets">
+            <button id="wbPreset" class="wbChip">WorkBuddy 云端 AI（免Key·默认）</button>
+            <button class="aiPreset" data-u="https://open.bigmodel.cn/api/paas/v4/chat/completions" data-m="glm-4-flash">智谱GLM（免费）</button>
+            <button class="aiPreset" data-u="https://api.deepseek.com/chat/completions" data-m="deepseek-chat">DeepSeek（超低价）</button>
+            <button class="aiPreset" data-u="https://api.moonshot.cn/v1/chat/completions" data-m="moonshot-v1-8k">Kimi（送额度）</button>
+            <button class="aiPreset" data-u="https://ark.cn-beijing.volces.com/api/v3/chat/completions" data-m="doubao-pro-32k">豆包（送额度）</button>
+            <button class="aiPreset" data-u="http://localhost:11434/v1/chat/completions" data-m="qwen2.5:7b">Ollama（离线）</button>
+          </div>
+          <div class="cfgNote">
+            Key 获取：<b>智谱</b> bigmodel.cn（GLM-4-Flash 模型免费）· <b>DeepSeek</b> platform.deepseek.com（约1元/百万词，极便宜）· <b>Kimi</b> platform.moonshot.cn（注册送15元）· <b>豆包</b> 火山方舟 console.volcengine.com/ark（每模型送50万词，模型名按控制台接入点填）。注册 → 创建 API Key → 粘贴到下方密钥栏。
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <input class="aiIn" id="aiUrl" placeholder="接口地址（OpenAI 兼容 /v1/chat/completions）">
+            <input class="aiIn" id="aiModel" placeholder="模型名（如 glm-4-flash / qwen2.5:7b）">
+            <input class="aiIn" id="aiKey" placeholder="API Key（可空）">
+          </div>
+          <div class="btnRow">
+            <button id="aiSave">保存</button>
+            <button id="aiTest">测试连通</button>
+          </div>
+          <div id="aiCfgMsg"></div>
+        </details>
+
+        <button class="brushBtn" id="genBtn">研墨提笔 · 开始生成阅读 ⟶</button>
+      </div>
+
+      <!-- 右：案头统计 + 文具 -->
+      <div class="deskSide">
+        <div class="statTiles">
+          <div class="tile"><b id="hRead">0</b><span>累计阅读</span></div>
+          <div class="tile"><b id="hFav">0</b><span>收藏文章</span></div>
+          <div class="tile"><b id="hWords">0</b><span>累计词数</span></div>
+        </div>
+        <div class="stationery">
+          <div class="stHead">文具盒 · 随取随用</div>
+          <button class="stationeryItem" id="meBtn">⭐ 我的主页<span>收藏 · 历史 · 错题本</span></button>
+          <button class="stationeryItem" id="wordBtn">🔤 每日背词<span>考研高频 · 随机复现</span></button>
+          <button class="stationeryItem" id="clozeBtn">🧩 15选10 · 选词填空<span>真题题型 · 三级难度</span></button>
+          <button class="stationeryItem" id="speakBtn">🎙️ 录音跟读<span>发音打分 · 逐句训练</span></button>
+        </div>
+        <div class="deskTip">
+          · 内容由本地引擎随机组合生成，并避开你看过的文章，"想要就有"。<br>
+          · 阅读页可切换「📖 翻页 / 📜 滚动」两种方式，翻页支持滑动、方向键与按钮。<br>
+          · 「英文模式 / 翻译模式」随时切换，翻译模式下逐句对照中文与语法点标签。<br>
+          · 喜欢的文章点 ☆ 收藏，在「我的书房」随时回看。<br>
+          · 手机浏览器「添加到主屏幕」，即可像 App 一样全屏使用。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 我的主页（书房） -->
+  <section id="profile">
+    <div class="meHead">
+      <button class="inkBtn" id="meBack">‹</button>
+      <div class="meTitle">我的书房</div>
+      <span class="meSlogan">每天一篇长难句，稳稳上岸</span>
+    </div>
+    <div class="meCard">
+      <div class="avatar">🎓</div>
+      <div>
+        <div class="meName">考研人</div>
+        <div class="meSub">照明考研方向 · 上岸必经之路</div>
+      </div>
+      <div class="meStats">
+        <div><b id="stRead">0</b><span>累计阅读</span></div>
+        <div><b id="stFav">0</b><span>收藏文章</span></div>
+        <div><b id="stWords">0</b><span>累计词数</span></div>
+      </div>
+    </div>
+    <button class="brushBtn slim" id="pwaInstallBtn">📲 安装到手机桌面</button>
+    <p class="deskTip" id="pwaInstallHint" style="margin-top:10px;">安装后桌面出现独立图标，全屏运行、支持离线，像正常 App 一样使用。</p>
+
+    <div class="inkLabel">我的收藏 <span class="inkHint">（点卡片回看，点星星取消）</span></div>
+    <div id="favList"></div>
+    <div id="favEmpty" class="empty">还没有收藏～<br>阅读时点右上角的 ☆，喜欢的文章就会保存到这里</div>
+
+    <div class="inkLabel rowSplit"><span>浏览历史 <span class="inkHint">（点卡片回看，点 ✕ 删除）</span></span><button class="clearHist" id="clearHist">🗑 清空</button></div>
+    <div id="histList"></div>
+    <div id="histEmpty" class="empty">暂无浏览记录～<br>每次生成或打开的阅读都会自动记在这里</div>
+
+    <div class="inkLabel rowSplit"><span>错题本 <span class="inkHint" id="wrongCount"></span></span><button class="clearHist" id="clearWrong">🗑 清空</button></div>
+    <div id="wrongList"></div>
+    <div id="wrongEmpty" class="empty">错题本还是空的～<br>阅读页点「📝 做题」，答错的题会自动收进来</div>
+  </section>
+
+  <!-- 每日背词 -->
+  <section id="words">
+    <div class="sceneHead">
+      <button class="inkBtn" id="wBack">‹</button>
+      <div class="sceneTitle">每日背词</div>
+      <div class="sceneCount" id="wCount">1 / 10</div>
+    </div>
+    <div class="wBarWrap"><div id="wBar"></div></div>
+    <div class="wCard">
+      <div id="wStudy">
+        <button class="inkBtn wSpeak" id="wSpeak" title="点击发音，朗读中再点停止">🔊</button>
+        <div class="wWord" id="wWord"></div>
+        <div class="wIpaRow"><span class="wIpa" id="wIpa"></span></div>
+        <div class="wTagWrap"><span class="wTag" id="wSrc" style="display:none;"></span> <span class="wTag" id="wTag"></span></div>
+        <div class="wMeaning" id="wMeaning"></div>
+        <div class="wEx" id="wEx"></div>
+      </div>
+      <div id="wDoneBox" style="display:none">
+        <div class="wDone">🎉 本轮完成</div>
+        <div class="wDoneSub" id="wDoneSub"></div>
+      </div>
+    </div>
+    <div class="wBtns">
+      <button class="wBtn reveal" id="wReveal">👀 看答案</button>
+      <div class="wJudgeRow" id="wJudge" style="display:none">
+        <button class="wBtn no" id="wNo">😖 不认识</button>
+        <button class="wBtn ok" id="wOk">😎 认识</button>
+      </div>
+      <button class="wBtn again" id="wAgain" style="display:none">🔁 再来一组</button>
+    </div>
+    <div id="wStats"></div>
+  </section>
+
+  <!-- 阅读测试 -->
+  <section id="quiz">
+    <div class="sceneHead">
+      <button class="inkBtn" id="qBack">‹</button>
+      <div class="sceneTitle">阅读测试</div>
+      <div class="sceneCount" id="qCount">1 / 5</div>
+    </div>
+    <div class="wBarWrap"><div id="qBar"></div></div>
+    <div class="wCard" style="text-align:left;">
+      <div id="qStudy">
+        <div style="margin-bottom:10px;"><span class="wTag" id="qType"></span></div>
+        <p class="qStem" id="qStem"></p>
+        <p class="qBody" id="qBody"></p>
+        <div id="qOptions"></div>
+        <div class="qExplain" id="qExplain"></div>
+      </div>
+      <div id="qDoneBox" style="display:none">
+        <div class="wDone" id="qScore"></div>
+        <div class="wDoneSub" id="qDoneSub"></div>
+      </div>
+    </div>
+    <div class="wBtns">
+      <button class="wBtn reveal" id="qNext" style="display:none">下一题 →</button>
+      <button class="wBtn again" id="qAgain" style="display:none">🔁 再测一组</button>
+    </div>
+  </section>
+
+  <!-- 录音跟读 -->
+  <section id="speak">
+    <div class="sceneHead">
+      <button class="inkBtn" id="spBack">‹</button>
+      <div class="sceneTitle">录音跟读</div>
+      <div class="sceneCount" id="spScene">☕ 咖啡店</div>
+    </div>
+    <div class="spHeadRow">
+      <span class="inkLabel inline" id="spTotal">尚未开始朗读</span>
+    </div>
+    <div class="spMeter"><div id="spTotalBar"></div></div>
+    <div class="clozeCard" id="spCur">
+      <div class="spCurTop"><span class="who" id="spCurWho"></span><span class="sceneCount" id="spCurNo"></span></div>
+      <p class="en" id="spCurEn"></p>
+      <p class="cn" id="spCurCn"></p>
+      <div class="spMeter" style="margin:12px 0 4px;"><div id="spTimeBar"></div></div>
+      <div class="spTimeRight" id="spTime">—</div>
+    </div>
+    <div class="wBtns" id="spCtl" style="display:none;flex-direction:column;gap:8px;">
+      <div class="wJudgeRow">
+        <button class="wBtn no" id="spPauseBtn">⏸ 暂停</button>
+        <button class="wBtn no" id="spReBtn">⟳ 重读本句</button>
+      </div>
+      <div class="wJudgeRow">
+        <button class="wBtn ok" id="spDoneBtn">✓ 这句读好了</button>
+        <button class="wBtn no" id="spSkipBtn">⏭ 下一句</button>
+      </div>
+      <button class="wBtn no" id="spEndBtn">⏹ 结束跟读</button>
+    </div>
+    <div class="inkLabel">全文对话（点击任意一句可重读该句）</div>
+    <div class="clozeCard" id="spDialog"></div>
+    <div class="spMeter"><div id="spLevel"></div></div>
+    <div class="spLive" id="spLive" style="display:none;">正在聆听…</div>
+    <div class="wBtns">
+      <button class="wBtn reveal" id="spStart">🎙 开始逐句跟读</button>
+    </div>
+    <div class="wCard" id="spResult" style="display:none;"></div>
+    <div class="wBtns">
+      <button class="wBtn again" id="spAgain" style="display:none">🔁 再来一次</button>
+      <button class="wBtn again" id="spNew" style="display:none">🔀 换一段对话</button>
+    </div>
+  </section>
+
+  <!-- 15选10 选词填空 -->
+  <section id="cloze">
+    <div class="sceneHead">
+      <button class="inkBtn" id="cBack">‹</button>
+      <div class="sceneTitle">15选10 · 选词填空</div>
+      <div class="sceneCount" id="cLevel">四级</div>
+    </div>
+    <div class="seg" id="clozeLevel" style="margin:2px 2px 16px;">
+      <button data-v="cet4" class="on">四级</button>
+      <button data-v="cet6">六级</button>
+      <button data-v="kao">考研</button>
+    </div>
+    <div class="clozeCard" id="clozePassage"></div>
+    <div class="inkLabel">词库 A–O（点击选中 → 再点文中空格填入；点已填空格可取回）</div>
+    <div class="clzBank" id="clzBank"></div>
+    <div class="clzMeaning" id="clzMeaning"></div>
+    <div class="wBtns">
+      <button class="wBtn reveal" id="cSubmit">✓ 提交答案</button>
+      <button class="wBtn again" id="cNew" style="display:none">🔁 换一篇</button>
+    </div>
+  </section>
+
+  <div id="toast"></div>
+
+  <!-- 阅读室（线装书） -->
+  <section id="reader">
+    <div class="bookCtl">
+      <button class="inkBtn" id="backBtn" title="返回">‹</button>
+      <div class="seg" id="modeSeg">
+        <button data-v="en" class="on">英文模式</button>
+        <button data-v="cn" class="">翻译模式</button>
+      </div>
+      <button class="inkBtn starBtn" id="favBtn" title="收藏">☆</button>
+      <button class="inkBtn" id="flipBtn" title="翻页 / 滚动">📖</button>
+      <button class="inkBtn" id="quizBtn" title="做题">📝</button>
+      <span class="pgCtl" id="pageCtl">
+        <button class="inkBtn" id="pgPrev" title="上一页">‹</button>
+        <span class="pgInd" id="pgInd">1 / 1</span>
+        <button class="inkBtn" id="pgNext" title="下一页">›</button>
+      </span>
+      <button class="brushBtn slim inline" id="nextBtn">换一篇 ⟳</button>
+      <span class="ttsCluster">
+        <button class="inkBtn ttsPlayBtn" id="ttsPlay" title="朗读全文">▶</button>
+        <button class="inkBtn" id="ttsStop" disabled="" title="停止">⏹</button>
+        <span class="ttsStatus" id="ttsStatus"></span>
+      </span>
+    </div>
+    <div class="meta" id="metaChips"></div>
+
+    <h2 class="bookTitle" id="titleEn"></h2>
+    <div class="titleCn" id="titleCn"></div>
+
+    <div class="bookStage" id="bookStage">
+      <div class="leaf" id="leaf">
+        <article id="article"></article>
+        <div class="pageFoot" id="pageFoot"></div>
+      </div>
+    </div>
+
+    <details class="vocab" id="vocabBox">
+      <summary>📖 本文重点词汇 <span id="vocabCount" style="color:var(--muted);font-weight:400;"></span></summary>
+      <ul id="vocabList"></ul>
+    </details>
+  </section>
+
+</main>
+
+<script src="lib/workbuddy-cloud-sdk.global.js"></script>
+<script src="assets/js/core.js?v=11"></script>
+<script src="assets/js/book.js?v=11"></script>
+<script>
+/* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
+(function(){
+  const SECS=['home','reader','profile','words','quiz','cloze','speak'];
+  const TITLES={home:'工作台',reader:'书房 · 阅读',profile:'我的书房',words:'每日背词',quiz:'阅读测试',cloze:'选词填空',speak:'跟读训练'};
+  const SHELF_OF={home:'shelfHome',words:'shelfWords',cloze:'shelfCloze',profile:'shelfMe',reader:'shelfRead',quiz:'shelfRead',speak:'shelfSpeak'};
+  const $id=(i)=>document.getElementById(i);
+
+  function setActive(secId){
+    const shelf=$id('shelf');
+    if(!shelf) return;
+    shelf.querySelectorAll('.shelfItem').forEach(t=>t.classList.toggle('on', t.id===SHELF_OF[secId]));
+  }
+
+  /* 导航按钮 */
+  const go={ shelfHome:()=>showHome(), shelfWords:()=>showWords(), shelfCloze:()=>openCloze('cet4'),
+            shelfSpeak:()=>showSpeak(), shelfMe:()=>showProfile(),
+            shelfRead:()=>{
+              if(typeof curPassage!=='undefined' && curPassage && curPassage.titleEn){ showReader(); }
+              else { showToast('书桌上还没有卷子：先在工作台「研墨提笔」生成一篇吧'); showHome(); }
+            } };
+  Object.keys(go).forEach(id=>{ const el=$id(id); if(el) el.addEventListener('click', go[id]); });
+
+  /* 场景题名 + 侧栏高亮（监听 section 显示切换） */
+  const obs=new MutationObserver(()=>{
+    const vis=SECS.find(s=>{ const el=$id(s); return el && el.style.display!=='none'; });
+    const t=$id('sceneTitle'); if(t && vis) t.textContent=TITLES[vis]||'';
+    setActive(vis||'home');
+    mirrorStats();
+  });
+  SECS.forEach(s=>{ const el=$id(s); if(el) obs.observe(el,{attributes:true,attributeFilter:['style']}); });
+
+  /* 工作台统计镜像：书房数字变化 → 工作台磁贴同步 */
+  function mirrorStats(){
+    const pairs=[['stRead','hRead'],['stFav','hFav'],['stWords','hWords']];
+    pairs.forEach(([from,to])=>{
+      const f=$id(from), t=$id(to);
+      if(f && t) t.textContent=f.textContent;
+    });
+  }
+  const statObs=new MutationObserver(mirrorStats);
+  ['stRead','stFav','stWords'].forEach(id=>{ const el=$id(id); if(el) statObs.observe(el,{characterData:true,childList:true,subtree:true}); });
+
+  /* 工作台日期 */
+  const gd=$id('greetDate');
+  if(gd){
+    const d=new Date();
+    const wd=['日','一','二','三','四','五','六'][d.getDay()];
+    gd.textContent=d.getFullYear()+' 年 '+(d.getMonth()+1)+' 月 '+d.getDate()+' 日 · 星期'+wd+' · 照明考研方向';
+  }
+
+  /* 启动时即从本地存储填充工作台统计（原版要进过书房才显示） */
+  try{
+    const st=JSON.parse(localStorage.getItem('yt_stats')||'{}');
+    const fv=JSON.parse(localStorage.getItem('yt_favs')||'[]');
+    const set=(id,v)=>{ const el=$id(id); if(el) el.textContent=v; };
+    set('hRead', st.read||0);
+    set('hFav', Array.isArray(fv)?fv.length:0);
+    set('hWords', (st.words||0).toLocaleString('en-US'));
+  }catch(e){}
+})();
+</script>
+
+</body>
+</html>
