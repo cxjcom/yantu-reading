@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=11">
+<link rel="stylesheet" href="assets/css/app.css?v=12">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
@@ -214,15 +214,19 @@
         <p class="qStem" id="qStem"></p>
         <p class="qBody" id="qBody"></p>
         <div id="qOptions"></div>
-        <div class="qExplain" id="qExplain"></div>
       </div>
       <div id="qDoneBox" style="display:none">
         <div class="wDone" id="qScore"></div>
         <div class="wDoneSub" id="qDoneSub"></div>
+        <div id="qReview" style="display:none"></div>
       </div>
     </div>
     <div class="wBtns">
-      <button class="wBtn reveal" id="qNext" style="display:none">下一题 →</button>
+      <div class="wJudgeRow" id="qNav" style="display:none">
+        <button class="wBtn no" id="qPrev" style="display:none">‹ 上一题</button>
+        <button class="wBtn ok" id="qNext" style="display:none">下一题 ›</button>
+      </div>
+      <button class="wBtn reveal" id="qSubmit" style="display:none">✓ 提交答案</button>
       <button class="wBtn again" id="qAgain" style="display:none">🔁 再测一组</button>
     </div>
   </section>
@@ -338,8 +342,8 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=11"></script>
-<script src="assets/js/book.js?v=11"></script>
+<script src="assets/js/core.js?v=12"></script>
+<script src="assets/js/book.js?v=12"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){

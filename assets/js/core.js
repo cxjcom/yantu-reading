@@ -1692,61 +1692,103 @@ function buildQuiz(p){
 let quiz=null;
 function openQuiz(){
   if(!curPassage) return;
-  quiz={items:buildQuiz(curPassage), idx:0, right:0};
+  quiz={items:buildQuiz(curPassage), idx:0, submitted:false};
+  quiz.answers=new Array(quiz.items.length).fill(null);
   showOnly('quiz');
   renderQuestion();
   window.scrollTo(0,0);
 }
+/* 真题作答模式：先作答（可改），全部提交后才显示得分与答案 */
 function renderQuestion(){
   const q=quiz.items[quiz.idx];
-  $('#qCount').textContent=(quiz.idx+1)+' / '+quiz.items.length;
-  $('#qBar').style.width=(quiz.idx/quiz.items.length*100)+'%';
+  $('#qCount').textContent='第 '+(quiz.idx+1)+' 题 / 共 '+quiz.items.length+' 题';
+  $('#qBar').style.width=((quiz.idx+1)/quiz.items.length*100)+'%';
   $('#qType').textContent=q.type+'题';
   $('#qStem').textContent=q.prompt;
   $('#qBody').textContent=q.body;
   const box=$('#qOptions'); box.innerHTML='';
-  q.your=null;
+  const sel=quiz.answers[quiz.idx];
   q.options.forEach((opt,i)=>{
-    const b=document.createElement('button'); b.className='qOpt';
+    const b=document.createElement('button'); b.className='qOpt'+(sel===opt?' sel':'');
     b.innerHTML='<b>'+'ABCD'[i]+'</b>'+opt;
-    b.onclick=()=>answerQ(q,i,b,box);
+    b.onclick=()=>{
+      quiz.answers[quiz.idx]=opt;
+      [...box.children].forEach((x,j)=>x.classList.toggle('sel', quiz.answers[quiz.idx]===q.options[j]));
+    };
     box.appendChild(b);
   });
-  $('#qExplain').classList.remove('shown'); $('#qExplain').textContent='';
-  $('#qDoneBox').style.display='none'; $('#qStudy').style.display='block';
-  $('#qNext').style.display='none'; $('#qAgain').style.display='none';
+  $('#qDoneBox').style.display='none';
+  $('#qReview').style.display='none';
+  $('#qStudy').style.display='block';
+  /* 导航：上一题/下一题 + 提交 */
+  $('#qNav').style.display='flex';
+  $('#qPrev').style.display=(quiz.idx===0)?'none':'block';
+  const last=(quiz.idx===quiz.items.length-1);
+  $('#qNext').style.display=last?'none':'block';
+  $('#qSubmit').style.display=last?'block':'none';
+  const answered=quiz.answers.filter(a=>a!=null).length;
+  $('#qSubmit').textContent='✓ 提交答案'+(answered<quiz.items.length?('（已答 '+answered+'/'+quiz.items.length+'）'):'');
+  $('#qAgain').style.display='none';
 }
-function answerQ(q,i,btn,box){
-  if(q.your!=null) return;
-  q.your=q.options[i];
-  [...box.children].forEach((b,j)=>{
-    b.disabled=true;
-    if(j===q.ans) b.classList.add('right');
-    if(j===i && i!==q.ans) b.classList.add('wrong');
+function submitQuiz(){
+  const unanswered=quiz.answers.filter(a=>a==null).length;
+  if(unanswered>0 && !confirm('还有 '+unanswered+' 题未作答，确定提交吗？')) return;
+  quiz.submitted=true;
+  quiz.right=0;
+  quiz.items.forEach((q,i)=>{
+    q.your=quiz.answers[i];
+    if(q.your===q.options[q.ans]) quiz.right++;
+    else addWrong(q);
   });
-  const ok=(i===q.ans);
-  if(ok) quiz.right++; else addWrong(q);
-  const ex=$('#qExplain');
-  ex.textContent=(ok?'✅ 回答正确':'❌ 回答错误')+' ｜ 正确答案：'+q.options[q.ans];
-  ex.classList.add('shown');
-  $('#qNext').style.display='block';
-  $('#qBar').style.width=((quiz.idx+1)/quiz.items.length*100)+'%';
+  renderQuizDone();
 }
 function renderQuizDone(){
-  $('#qCount').textContent='完成';
+  $('#qCount').textContent='已完成';
   $('#qBar').style.width='100%';
   $('#qStudy').style.display='none';
+  $('#qNav').style.display='none';
+  $('#qSubmit').style.display='none';
+  const total=quiz.items.length, wrong=total-quiz.right;
   $('#qDoneBox').style.display='block';
-  const wrong=quiz.items.length-quiz.right;
-  $('#qScore').textContent='得分 '+quiz.right+' / '+quiz.items.length;
+  $('#qScore').textContent='得分 '+quiz.right+' / '+total;
   $('#qDoneSub').innerHTML = wrong
     ? ('错 '+wrong+' 题已加入错题本，<br>可在「我的书房 → 错题本」复习')
     : '全部正确，没有新错题 👏';
-  $('#qNext').style.display='none';
+  /* 逐题答案详解 */
+  const list=$('#qReview'); list.innerHTML='';
+  quiz.items.forEach((q,i)=>{
+    const ok=(q.your===q.options[q.ans]);
+    const d=document.createElement('div'); d.className='qReviewItem';
+    const head=document.createElement('div'); head.className='qRevHead';
+    head.innerHTML='<span class="wTag">'+q.type+'题</span><span class="qRevNo">第 '+(i+1)+' 题</span>'+
+      '<span class="qRevRes '+(ok?'g':'r')+'">'+(ok?'✓ 答对':'✗ 答错')+'</span>';
+    d.appendChild(head);
+    const stem=document.createElement('p'); stem.className='qStem'; stem.textContent=q.prompt; d.appendChild(stem);
+    if(q.body){ const body=document.createElement('p'); body.className='qBody'; body.textContent=q.body; d.appendChild(body); }
+    const opts=document.createElement('div');
+    q.options.forEach((opt,j)=>{
+      const b=document.createElement('button'); b.className='qOpt';
+      if(j===q.ans) b.classList.add('right');
+      else if(q.your===opt) b.classList.add('wrong');
+      b.disabled=true;
+      b.innerHTML='<b>'+'ABCD'[j]+'</b>';
+      b.appendChild(document.createTextNode(opt));
+      opts.appendChild(b);
+    });
+    d.appendChild(opts);
+    const ans=document.createElement('div'); ans.className='qRevAns';
+    ans.textContent='正确答案 '+'ABCD'[q.ans]+' ｜ 你的答案：'+(q.your||'未作答');
+    d.appendChild(ans);
+    list.appendChild(d);
+  });
+  list.style.display='block';
   $('#qAgain').style.display='block';
+  window.scrollTo(0,0);
 }
-$('#qNext').onclick=()=>{ quiz.idx++; if(quiz.idx>=quiz.items.length) renderQuizDone(); else renderQuestion(); };
-$('#qAgain').onclick=()=>{ quiz={items:buildQuiz(curPassage), idx:0, right:0}; renderQuestion(); };
+$('#qPrev').onclick=()=>{ if(quiz.idx>0){ quiz.idx--; renderQuestion(); } };
+$('#qNext').onclick=()=>{ if(quiz.idx<quiz.items.length-1){ quiz.idx++; renderQuestion(); } };
+$('#qSubmit').onclick=submitQuiz;
+$('#qAgain').onclick=()=>{ openQuiz(); };
 $('#quizBtn').onclick=openQuiz;
 $('#qBack').onclick=()=>{ showReader(); };
 
