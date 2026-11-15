@@ -1194,6 +1194,7 @@ $('#aiSeg').addEventListener('click', function(e){
 $('#aiCancel').onclick=function(){
   AI_CANCEL=true;
   if(AI_CTRL){ try{ AI_CTRL.abort(); }catch(e){} }   /* 随时中断进行中的请求 */
+  AI_CTRLS.forEach(function(c){ try{ c.abort(); }catch(e){} }); AI_CTRLS=[];   /* 并行竞速：掐掉全部在跑的流 */
 };
 function loadSettings(){
   try{
@@ -1323,7 +1324,7 @@ function aiLoadingHide(){
   if(AI_TMR){ clearInterval(AI_TMR); AI_TMR=null; }
   AI_BUSY=false;
 }
-var AI_MODE=true, AI_BUSY=false, AI_CANCEL=false, AI_CTRL=null, AI_TMR=null, AI_T0=0;
+var AI_MODE=true, AI_BUSY=false, AI_CANCEL=false, AI_CTRL=null, AI_TMR=null, AI_T0=0, AI_CTRLS=[];
 function aiCfg(){ try{ return JSON.parse(localStorage.getItem('yt_aicfg')||'{}'); }catch(e){ return {}; } }
 function aiCfgSave(c){ try{ localStorage.setItem('yt_aicfg', JSON.stringify(c)); }catch(e){} }
 /* 免费无密钥兜底通道（对方接口策略可能变化，失败自动跳过） */
@@ -1348,23 +1349,23 @@ async function wbCloudChat(msgs,timeoutMs,temp,modelId){
     const outMsgs=(msgs[0]&&msgs[0].role==='system')?msgs
       :[{role:'system',content:'You are a helpful assistant. Be concise and helpful.'}].concat(msgs);
     const ctrl=new AbortController();
-    AI_CTRL=ctrl;   /* 接入全局取消：生成中点「取消」立即中断云端流式输出 */
+    AI_CTRLS.push(ctrl);
     /* 空闲超时取代总超时：流式输出只要还在产 token 就不掐，
-       只有 45s 没有任何新内容才断；总时长仍受 timeoutMs 硬顶 */
+       只有 40s 没有任何新内容才断；总时长仍受 timeoutMs 硬顶 */
     const total=timeoutMs||60000, t0=Date.now();
-    let idleTm=setTimeout(function(){ ctrl.abort(); }, 45000);
+    let idleTm=setTimeout(function(){ ctrl.abort(); }, 40000);
     for await (const chunk of WB_CLOUD.llm.chat.completions.create({
       model:modelId, messages:outMsgs, stream:true, temperature:(temp!=null?temp:0.75), signal:ctrl.signal
     })){
-      if(AI_CANCEL){ clearTimeout(idleTm); AI_CTRL=null; try{ctrl.abort();}catch(e){} return ''; }
+      if(AI_CANCEL){ clearTimeout(idleTm); try{ctrl.abort();}catch(e){} return ''; }
       clearTimeout(idleTm);
       if(Date.now()-t0>total){ try{ctrl.abort();}catch(e){} break; }
-      idleTm=setTimeout(function(){ ctrl.abort(); }, 45000);
+      idleTm=setTimeout(function(){ ctrl.abort(); }, 40000);
       const d=chunk.choices&&chunk.choices[0]&&chunk.choices[0].delta;
       if(d&&d.content) txt+=d.content;
     }
-    clearTimeout(idleTm); AI_CTRL=null;
-  }catch(e){ AI_CTRL=null; }
+    clearTimeout(idleTm);
+  }catch(e){}
   return txt;   /* 超时/中断的半截输出也返回，交给 extractJSON 抢救 */
 }
 /* ---------- AI 链路诊断：失败不再静默，逐端点记录原因 ---------- */
@@ -1387,69 +1388,80 @@ function aiDiagSummary(){
 window.__ytAiDiag=function(){ try{ return JSON.parse(localStorage.getItem('yt_aidiag')||'[]'); }catch(e){ return []; } };
 async function aiChat(sys,usr,timeoutMs,minLen,opts){
   AI_CANCEL=false;   /* 复位取消标记（上次任务取消后不污染本次，「测试连通」不再永久失败） */
+  AI_CTRLS=[];
   const msgs=[{role:'system',content:sys},{role:'user',content:usr}];
   const temp=(opts&&opts.temp!=null)?opts.temp:0.75;
+  const minL=minLen||80;
   const cfg=aiCfg();
   const diag=[];
-  const mark=function(ep,st,ms,x){ diag.push({ep:ep,st:st,ms:ms,x:x||''}); };
-  /* ① WorkBuddy 云端 AI：免密钥优先；主模型空/短则换备用模型再试一轮 */
-  try{
-    if(WB_CLOUD){
-      if(!WB_MODELS){
-        try{
-          WB_MODELS=await WB_CLOUD.llm.models.list();
-          if(!Array.isArray(WB_MODELS)) WB_MODELS=[];
-        }catch(e){ WB_MODELS=[]; }
+  const mark=function(ep,st,ms,x){ diag.push({ep:ep,st:st,ms:Math.round(ms),x:x||''}); };
+  let settled=false;
+  const abortLosers=function(){ AI_CTRLS.forEach(function(c){ try{c.abort();}catch(e){} }); AI_CTRLS=[]; };
+  const total=timeoutMs||180000;
+  /* 包装一次端点尝试：最先拿到"足够长文本"的端点胜出，立即掐掉其余流 */
+  const wrap=function(name,msStart,p){
+    return p.then(function(txt){
+      if(settled||AI_CANCEL) return null;
+      const ms=Date.now()-msStart;
+      if(txt&&txt.trim().length>minL){
+        settled=true; mark(name,'ok',ms,txt.length+'字'); abortLosers(); aiDiagPush(diag);
+        return txt;
       }
-      const ids=WB_MODELS.filter(function(m){ return m&&m.disabled!==true; }).map(function(m){ return m.id; }).slice(0,2);
-      if(!ids.length){ mark('WB','无可用模型',0); }
-      for(let mi=0; mi<ids.length; mi++){
-        const t0=Date.now();
-        const txt=await wbCloudChat(msgs, mi===0?(timeoutMs||60000):45000, temp, ids[mi]);
-        if(AI_CANCEL) return null;
-        const ms=Date.now()-t0;
-        if(txt&&txt.trim().length>(minLen||80)){ mark('WB:'+ids[mi],'ok',ms,txt.length+'字'); aiDiagPush(diag); return txt; }
-        mark('WB:'+ids[mi],'空/短',ms,(txt||'').length+'字');
-      }
-    }
-  }catch(e){ if(AI_CANCEL) return null; mark('WB','异常',0,String(e&&e.message||e).slice(0,50)); }
-  await ollamaProbe();
-  /* 端点优先级：用户自定义 → Ollama 本地（探测可达才用） → 免费无密钥兜底。
-     第 2 个及以后的端点把单端点超时压到 100s，避免整条链路等太久 */
-  const eps=[];
-  if(cfg.url) eps.push({name:'自定义', url:cfg.url, model:cfg.model||'gpt-4o-mini', key:cfg.key||''});
-  if(spkOllamaOK) eps.push({name:'Ollama', url:'http://localhost:11434/v1/chat/completions', model:cfg.ollamaModel||'qwen2.5:7b', key:''});
-  AI_FREE.forEach(function(ep,i){ eps.push({name:'兜底'+(i+1), url:ep.url, model:ep.model, key:ep.key}); });
-  for(let ei=0; ei<eps.length; ei++){
-    const ep=eps[ei];
-    const epTm=(ei===0)?(timeoutMs||60000):Math.min(timeoutMs||60000, 100000);
-    const t0=Date.now();
-    let tm=null;
-    try{
-      const ctrl=new AbortController();
-      AI_CTRL=ctrl;
-      tm=setTimeout(function(){ ctrl.abort(); }, epTm);
-      const headers={'Content-Type':'application/json'};
-      if(ep.key) headers['Authorization']='Bearer '+ep.key;
-      const res=await fetch(ep.url,{method:'POST',signal:ctrl.signal,headers:headers,
-        body:JSON.stringify({model:ep.model,messages:msgs,temperature:temp})});
-      const ms=Date.now()-t0;
-      if(!res.ok){ clearTimeout(tm); AI_CTRL=null; mark(ep.name,'HTTP '+res.status,ms); continue; }
-      const j=await res.json();
-      const txt=(j.choices&&j.choices[0]&&j.choices[0].message)? j.choices[0].message.content : (j.content||'');
-      clearTimeout(tm); AI_CTRL=null;
-      if(AI_CANCEL) return null;
-      if(txt&&txt.trim().length>(minLen||80)){ mark(ep.name,'ok',ms,txt.length+'字'); aiDiagPush(diag); return txt; }
-      mark(ep.name,'空/短',ms,(txt||'').length+'字');
-    }catch(e){
-      if(tm) clearTimeout(tm);
-      AI_CTRL=null;
-      if(AI_CANCEL) return null;
-      const ms=Date.now()-t0;
+      mark(name,'空/短',ms,(txt||'').length+'字');
+      return null;
+    }).catch(function(e){
+      if(settled||AI_CANCEL) return null;   /* 胜出后对输家的掐流不算失败 */
       const msg=String(e&&e.message||e);
-      mark(ep.name, /abort/i.test(msg)?'超时':msg.slice(0,30), ms);
+      mark(name,/abort/i.test(msg)?'超时':msg.slice(0,30),Date.now()-msStart);
+      return null;
+    });
+  };
+  /* 单个 OpenAI 兼容 HTTP 端点的一次请求 */
+  const fetchTask=function(name,url,model,key,tm){
+    const msStart=Date.now();
+    const ctrl=new AbortController(); AI_CTRLS.push(ctrl);
+    const tmr=setTimeout(function(){ try{ctrl.abort();}catch(e){} }, tm);
+    const headers={'Content-Type':'application/json'};
+    if(key) headers['Authorization']='Bearer '+key;
+    return fetch(url,{method:'POST',signal:ctrl.signal,headers:headers,
+      body:JSON.stringify({model:model,messages:msgs,temperature:temp})})
+      .then(function(res){ if(!res.ok) throw new Error('HTTP '+res.status); return res.json(); })
+      .then(function(j){ clearTimeout(tmr);
+        return (j.choices&&j.choices[0]&&j.choices[0].message)? j.choices[0].message.content : (j.content||''); })
+      .catch(function(e){ clearTimeout(tmr); throw e; });
+  };
+  const tasks=[];
+  const t0=Date.now();
+  let raceStarted=false;
+  /* 并行竞速①：自定义端点与免费兜底立即开跑——手机上某端点被墙不再拖死整条链路 */
+  if(cfg.url) tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000))));
+  AI_FREE.forEach(function(ep,i){ tasks.push(wrap('兜底'+(i+1), t0, fetchTask('兜底'+(i+1), ep.url, ep.model, ep.key||'', Math.min(total,100000)))); });
+  /* Ollama 本地：3s 内探测可达才加入竞速（不阻塞其他端点） */
+  ollamaProbe().then(function(ok){
+    if(ok && !settled && !AI_CANCEL && !raceStarted){
+      tasks.push(wrap('Ollama', Date.now(), fetchTask('Ollama','http://localhost:11434/v1/chat/completions', cfg.ollamaModel||'qwen2.5:7b','', Math.min(total,120000))));
     }
+  });
+  /* 并行竞速②：WB 云端（模型列表 10s 拿不到视为不可达，跳过 WB，其余继续跑） */
+  if(WB_CLOUD){
+    try{
+      if(!WB_MODELS){
+        WB_MODELS=await Promise.race([
+          WB_CLOUD.llm.models.list(),
+          new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('list 超时')); },10000); })
+        ]);
+        if(!Array.isArray(WB_MODELS)) WB_MODELS=[];
+      }
+    }catch(e){ WB_MODELS=[]; }
+    const id=(WB_MODELS.filter(function(m){ return m&&m.disabled!==true; })[0]||{}).id;
+    if(id) tasks.push(wrap('WB:'+id, Date.now(), wbCloudChat(msgs,total,temp,id)));
+    else mark('WB','不可达/无模型',Date.now()-t0);
   }
+  raceStarted=true;
+  const results=await Promise.all(tasks);
+  if(AI_CANCEL) return null;
+  const win=results.find(function(r){ return r; });
+  if(win) return win;
   aiDiagPush(diag);
   return null;
 }
