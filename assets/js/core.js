@@ -1531,7 +1531,7 @@ async function aiBuildDialog(){
   if(lines.length<10 || words<140) return null;
   return {icon:'🤖', name:String(j.scene||'AI 对话'), lines:lines, src:'ai'};
 }
-function showOnly(id){ ['home','reader','profile','words','quiz','cloze','speak','longread','games'].forEach(s=>{ $('#'+s).style.display = (s===id)?'block':'none'; }); }
+function showOnly(id){ ['home','reader','profile','words','quiz','cloze','speak','longread','games','writing','mock'].forEach(s=>{ $('#'+s).style.display = (s===id)?'block':'none'; }); }
 function showReader(){ showOnly('reader'); }
 function showHome(){ stopTts(); showOnly('home'); updateMeBtn(); window.scrollTo(0,0); }
 function showProfile(){ stopTts(); showOnly('profile'); renderProfile(); window.scrollTo(0,0); }
@@ -1572,6 +1572,13 @@ function bumpStats(words){
     s.streak=(s.lastDay===yesterday)?(s.streak||0)+1:1;
     s.lastDay=today;
   }
+  /* 逐日记录（学习面板热力日历数据源），上限 400 天 */
+  s.daily=s.daily||{};
+  const d0=s.daily[today]||{read:0,words:0};
+  d0.read=(d0.read||0)+1; d0.words=(d0.words||0)+(words||0);
+  s.daily[today]=d0;
+  const dayKeys=Object.keys(s.daily);
+  if(dayKeys.length>400){ dayKeys.sort(); dayKeys.slice(0,dayKeys.length-400).forEach(function(k){ delete s.daily[k]; }); }
   try{ localStorage.setItem('yt_stats', JSON.stringify(s)); }catch(e){}
 }
 function renderStreakChip(){
@@ -1607,6 +1614,7 @@ function renderProfile(){
   });
   renderHistory();
   renderWrong();
+  renderPanel();
   updateMeBtn();
 }
 function removeFav(id){
@@ -2109,7 +2117,12 @@ async function buildClozePassage(){
     showToast('❌ AI 生成失败，已改用本地生成');
   }
   try{ await ensureWordBank(); }catch(e){ showToast('词库加载失败，请检查网络后重试'); return; }
-  const cl=CLOZE_LEVELS[clozeLevel];
+  cloze=buildLocalClozeData(clozeLevel);
+  renderCloze();
+}
+/* 本地选词填空构造（独立函数：仿真模考复用同一数据形态） */
+function buildLocalClozeData(lv){
+  const cl=CLOZE_LEVELS[lv];
   const p=buildPassage(cl.diff, cl.plan);   /* 按真题选词填空篇幅（四级 200-250 词 / 六级 250-300 词）出短文 */
   const sents=[]; p.paras.forEach(function(pa){ pa.forEach(function(s){ sents.push(s); }); });
   /* 全文词频（多次出现的词不挖空，避免泄答案） */
@@ -2164,9 +2177,8 @@ async function buildClozePassage(){
   });
   pool.some(function(w){ if(need<=0) return true; if(bank.indexOf(w)<0){ bank.push(w); need--; } return need<=0; });
   bank=shuffle(bank);
-  cloze={level:clozeLevel, passage:p, sents:sents, blanks:blanks, done:false, right:0,
-         bank:bank.map(function(w,i){ return {letter:'ABCDEFGHIJKLMNO'[i], word:w, used:false}; })};
-  renderCloze();
+  return {level:lv, passage:p, sents:sents, blanks:blanks, done:false, right:0,
+          bank:bank.map(function(w,i){ return {letter:'ABCDEFGHIJKLMNO'[i], word:w, used:false}; })};
 }
 function renderCloze(){
   const c=cloze;
@@ -3361,29 +3373,33 @@ async function lrGenerate(){
              answers:new Array(ai.statements.length).fill(null), submitted:false, src:'ai'};
   } else {
     try{ await ensureWordBank(); }catch(e){}
-    const p=buildPassage(LR_LEVELS[lrLevel].diff, lrPlan(LR_LEVELS[lrLevel].diff));
-    const letters='ABCDEFGHIJKLMNOP'.slice(0, Math.max(12, p.paras.length)).split('');
-    /* 10 个陈述句：分散取段，优先带数字的事实句 */
-    const paras=p.paras; const stmts=[]; const used=new Set();
-    for(let i=0; stmts.length<10 && i<paras.length; i++){
-      const pi=(1+i*Math.floor(paras.length/10))%paras.length;
-      if(used.has(pi)) continue;
-      const sents=paras[pi].map(function(s){ return s.en; });
-      let pick2=null;
-      for(const s of sents){ if(numFacts(s).length){ pick2=s; break; } }
-      if(!pick2){ pick2=sents.reduce(function(a,b){ return b.length>a.length?b:a; }); }
-      if(pick2.length<40) continue;
-      stmts.push({text:pick2, letter:letters[pi]});
-      used.add(pi);
-    }
-    lrState={level:lrLevel, title:p.titleEn, titleCn:p.titleCn,
-             paras:paras.map(function(pa){ return {en:pa.map(function(s){ return s.en; }).join(' ')}; }),
-             letters:letters, statements:stmts,
-             answers:new Array(stmts.length).fill(null), submitted:false, src:'local'};
+    lrState=buildLocalLR(lrLevel);
     if(lrState.statements.length<10) showToast('本文段落不足，已尽量出题');
   }
   renderLR();
   window.scrollTo(0,0);
+}
+/* 本地长篇阅读构造（独立函数：仿真模考复用同一数据形态） */
+function buildLocalLR(lv){
+  const p=buildPassage(LR_LEVELS[lv].diff, lrPlan(LR_LEVELS[lv].diff));
+  const letters='ABCDEFGHIJKLMNOP'.slice(0, Math.max(12, p.paras.length)).split('');
+  /* 10 个陈述句：分散取段，优先带数字的事实句 */
+  const paras=p.paras; const stmts=[]; const used=new Set();
+  for(let i=0; stmts.length<10 && i<paras.length; i++){
+    const pi=(1+i*Math.floor(paras.length/10))%paras.length;
+    if(used.has(pi)) continue;
+    const sents=paras[pi].map(function(s){ return s.en; });
+    let pick2=null;
+    for(const s of sents){ if(numFacts(s).length){ pick2=s; break; } }
+    if(!pick2){ pick2=sents.reduce(function(a,b){ return b.length>a.length?b:a; }); }
+    if(pick2.length<40) continue;
+    stmts.push({text:pick2, letter:letters[pi]});
+    used.add(pi);
+  }
+  return {level:lv, title:p.titleEn, titleCn:p.titleCn,
+          paras:paras.map(function(pa){ return {en:pa.map(function(s){ return s.en; }).join(' ')}; }),
+          letters:letters, statements:stmts,
+          answers:new Array(stmts.length).fill(null), submitted:false, src:'local'};
 }
 function renderLR(){
   $('#lrLevel').textContent=LR_LEVELS[lrLevel].label+' · '+LR_LEVELS[lrLevel].target;
@@ -4097,3 +4113,502 @@ $('#gameSeg').addEventListener('click', function(ev){
   gmSyncSegs();
   renderGm();
 });
+
+/* =====================================================
+   学习数据面板 · AI 作文批改 · 读后讨论 · 仿真模考
+   ===================================================== */
+
+/* ---------- 学习数据面板（书房页） ---------- */
+function getDaily(){ try{ return JSON.parse(localStorage.getItem('yt_daily')||'{}'); }catch(e){ return {}; } }
+function getWritings(){ try{ return JSON.parse(localStorage.getItem('yt_writings')||'[]'); }catch(e){ return []; } }
+function saveWritings(w){ try{ localStorage.setItem('yt_writings', JSON.stringify(w.slice(0,30))); }catch(e){} }
+function renderPanel(){
+  const el=document.getElementById('panel'); if(!el) return;
+  const st=getStats(), daily=getDaily();
+  const ds=function(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  const cells=[];
+  for(let i=83;i>=0;i--){
+    const d=new Date(Date.now()-i*86400000);
+    const key=ds(d);
+    const r=(daily[key]&&daily[key].read)||0;
+    const lv=r>=4?4:(r>=2?3:(r>=1?2:0));
+    cells.push('<i class="pnCell lv'+lv+'" title="'+key+' · '+r+' 篇"></i>');
+  }
+  const ws=getWordState(); let wk=0, wu=0;
+  Object.keys(ws).forEach(function(k){ if(ws[k].s==='k') wk++; else wu++; });
+  const wtot=wk+wu;
+  const wb=getWrongBook(); const byType={};
+  wb.forEach(function(x){ byType[x.type]=(byType[x.type]||0)+1; });
+  const typeRows=Object.keys(byType).sort(function(a,b){ return byType[b]-byType[a]; }).map(function(t){
+    return '<div class="pnBarRow"><span>'+gmEsc(t)+'</span><div class="pnBar"><i style="width:'+Math.round(byType[t]/Math.max(1,wb.length)*100)+'%"></i></div><b>'+byType[t]+'</b></div>';
+  }).join('');
+  const wr=getWritings();
+  const wrRows=wr.slice(0,5).map(function(w){
+    return '<div class="pnBarRow"><span>'+gmEsc(w.date.slice(5))+' '+gmEsc(w.typeName)+'</span><div class="pnBar"><i style="width:'+Math.round((w.total||0)/Math.max(1,w.full||20)*100)+'%"></i></div><b>'+(w.total||0)+'/'+(w.full||20)+'</b></div>';
+  }).join('');
+  el.innerHTML=
+    '<div class="inkLabel">学习面板 <span class="inkHint">（近 12 周，每格一天）</span></div>'+
+    '<div class="pnCard">'+
+      '<div class="pnHeat">'+cells.join('')+'</div>'+
+      '<div class="pnLegend"><span>🔥 连续 '+gmEsc(String(st.streak||0))+' 天 · 累计 '+(st.read||0)+' 篇</span>'+
+      '<span class="pnHeatLv"><i class="pnCell lv0"></i><i class="pnCell lv2"></i><i class="pnCell lv3"></i><i class="pnCell lv4"></i> 篇数</span></div>'+
+      '<div class="pnBarRow"><span>词汇已掌握</span><div class="pnBar"><i style="width:'+(wtot?Math.round(wk/Math.max(1,wtot)*100):0)+'%"></i></div><b>'+wk+'</b></div>'+
+      '<div class="pnBarRow"><span>词汇巩固中</span><div class="pnBar"><i class="pnAmber" style="width:'+(wtot?Math.round(wu/Math.max(1,wtot)*100):0)+'%"></i></div><b>'+wu+'</b></div>'+
+      (typeRows?('<div class="pnSec">错题类型分布（'+wb.length+' 题）</div>'+typeRows):'')+
+      (wrRows?('<div class="pnSec">最近写作成绩</div>'+wrRows):'')+
+    '</div>';
+}
+
+/* ---------- AI 作文批改 ---------- */
+const WR_TOPICS={
+  big:[
+    {topic:'Directions: Write an essay based on the picture below. In your description, you should first describe the picture briefly, then interpret its intended meaning, and give your comments. （图画：一个年轻人站在书山脚下，抬头望向山顶的灯塔）要求：160-200 词，可自行添加细节。'},
+    {topic:'Directions: Write an essay based on the chart. （图表：某社交平台用户每日平均使用时长逐年上升）You should interpret the chart and give your comments. 160-200 词。'},
+    {topic:'Directions: Write an essay based on the picture. （图画：两人面对同一杯半满的水，一人沮丧一人微笑）You should describe the picture, interpret its meaning, and comment. 160-200 词。'},
+    {topic:'Directions: Write an essay on the topic "The value of persistence on the postgraduate journey". You should write 160-200 words with a clear structure.'},
+    {topic:'Directions: Write an essay based on the picture. （图画：一位老人向年轻人学习使用智能手机，年轻人为老人讲解）Describe, interpret and comment. 160-200 词。'},
+    {topic:'Directions: Write an essay based on the chart. （图表：越来越多毕业生选择返乡就业）Interpret and comment. 160-200 词。'}
+  ],
+  small:[
+    {topic:'Directions: Suppose you are Li Ming, a postgraduate student. Write a letter to your professor, Dr. Wang, to ask for advice on your thesis topic. You should write about 100 words. Do not sign your own name at the end; use "Li Ming" instead.'},
+    {topic:'Directions: Suppose your class is going to hold an English speech contest. As the organizer, write a notice to invite classmates to participate. About 100 words, signed "Li Ming".'},
+    {topic:'Directions: Suppose you borrowed a book from your friend, Zhang Wei, but lost it. Write a letter of apology and explain how you will make up for it. About 100 words, signed "Li Ming".'},
+    {topic:'Directions: Write an email to a foreign professor, Dr. Smith, inviting him to give a lecture on cross-cultural communication at your university. About 100 words, signed "Li Ming".'},
+    {topic:'Directions: Suppose you are Li Ming. Write a letter of recommendation for your classmate, Liu Yang, who is applying for a graduate program. About 100 words.'},
+    {topic:'Directions: Suppose you are the secretary of the volunteers association. Write a letter to recruit volunteers for a city marathon. About 100 words, signed "Li Ming".'}
+  ]
+};
+let wrType='big', wrTopic=null, wrBusy=false;
+function showWriting(){
+  stopTts();
+  showOnly('writing');
+  if(!wrTopic) wrIntro();
+  window.scrollTo(0,0);
+}
+function wrSyncSegs(){
+  [...$('#wrTypeSeg').children].forEach(function(b){ b.classList.toggle('on', b.dataset.v===wrType); });
+}
+function wrIntro(){
+  $('#wrCount').textContent='';
+  $('#wrStage').innerHTML=
+    '<div class="wCard"><div class="wDone">✍️ AI 作文批改</div>'+
+    '<p class="deskTip" style="margin:14px 0 18px;">选一道题，写完提交，AI 按考研评分标准给分：<br>内容 · 语言 · 结构 · 衔接 四维度打分，逐句诊断 + 高分范文。</p>'+
+    '<div class="wBtns"><button class="wBtn reveal" id="wrNewTopic">🎲 随机出一题</button></div>'+
+    '<p class="gmBest2">题库共 '+WR_TOPICS[wrType].length+' 道经典方向 · 也可由 AI 现场命题</p></div>';
+  $('#wrNewTopic').onclick=wrNewTopicFn;
+}
+function wrNewTopicFn(){
+  if(wrBusy) return;
+  const local=WR_TOPICS[wrType][Math.floor(Math.random()*WR_TOPICS[wrType].length)];
+  wrTopic={type:wrType, topic:local.topic, src:'题库'};
+  wrRenderEditor();
+  /* AI 现场命题：成功则替换题库题（编辑器仍在时静默升级） */
+  wrBusy=true;
+  const sys='你是考研英语命题专家。只输出严格JSON对象，禁止输出任何解释或markdown代码块标记。';
+  const spec=wrType==='big'
+    ? '出一张考研英语一大作文题（图画/图表描述类）：题面用英文 Directions 描述一幅假想图画或图表的内容与寓意方向，要求考生先描述再阐释并评论，160-200 词。'
+    : '出一张考研英语小作文题（在建议信/推荐信/道歉信/邀请函/通知/招募信中随机选一类）：全英文 Directions，情景具体，约 100 词，落款用 Li Ming。';
+  const usr=spec+' 输出JSON：{"topic":"完整英文题面 Directions..."}';
+  aiChat(sys,usr,45000,60).then(function(txt){
+    wrBusy=false;
+    const j=txt?extractJSON(txt):null;
+    if(j && j.topic && String(j.topic).length>40){
+      wrTopic={type:wrType, topic:String(j.topic), src:'AI 命题'};
+      if(document.getElementById('wrEditor') && !document.getElementById('wrResult').innerHTML) wrRenderEditor();
+    }
+  }).catch(function(){ wrBusy=false; });
+}
+function wrRenderEditor(){
+  $('#wrCount').textContent=wrTopic.src;
+  $('#wrStage').innerHTML=
+    '<div class="wCard" style="text-align:left;" id="wrEditor">'+
+      '<div class="wrTopic">'+gmEsc(wrTopic.topic)+'</div>'+
+      '<textarea id="wrInput" class="wrInput" rows="10" placeholder="Start writing here...（正文直接写，无需写 Directions）"></textarea>'+
+      '<div class="wrMeta"><span id="wrWords">0 词</span><span id="wrHint">'+(wrTopic.type==='big'?'建议 160-200 词':'建议 100 词左右')+'</span></div>'+
+      '<div class="wBtns"><button class="wBtn reveal" id="wrSubmit">提交批改 ⟶</button></div>'+
+      '<div id="wrResult"></div>'+
+    '</div>';
+  const ta=document.getElementById('wrInput');
+  ta.addEventListener('input', function(){
+    const n=ta.value.trim()?ta.value.trim().split(/\s+/).length:0;
+    document.getElementById('wrWords').textContent=n+' 词';
+  });
+  document.getElementById('wrSubmit').onclick=wrSubmit;
+}
+async function wrSubmit(){
+  if(wrBusy) return;
+  const ta=document.getElementById('wrInput');
+  const text=(ta.value||'').trim();
+  const words=text?text.split(/\s+/).length:0;
+  if(words<20){ showToast('作文太短了，至少写 20 个词'); return; }
+  if(!wrTopic){ return; }
+  wrBusy=true;
+  const btn=document.getElementById('wrSubmit');
+  btn.disabled=true; btn.textContent='⏳ AI 阅卷中…';
+  const full=wrTopic.type==='big'?20:10;
+  const sys='你是考研英语写作阅卷专家。只输出严格JSON对象，禁止输出任何解释或markdown代码块标记。';
+  const usr='按考研英语'+(wrTopic.type==='big'?'大作文':'小作文')+'评分标准批改这篇学生作文。题目：'+wrTopic.topic+
+    '\n学生作文（'+words+' 词）：\n'+text+
+    '\n评分：满分 '+full+' 分；四个维度各 0-5 分：content 内容切题与深度 / language 语言准确性与词汇 / structure 结构与段落组织 / link 衔接连贯。'+
+    '\n输出JSON：{"total":数字,"dims":{"content":n,"language":n,"structure":n,"link":n},"summary":"中文总评 60-100 字","notes":[{"orig":"学生原句或片段","comment":"中文问题诊断（语法/用词/逻辑）","fix":"英文修改建议句"}] 最多6条只挑最重要的问题,"sample":"一篇高质量英文参考范文（'+(wrTopic.type==='big'?'180 词左右':'100 词左右')+'）"}';
+  let j=null;
+  for(let attempt=0; attempt<2 && !j; attempt++){
+    const txt=await aiChat(sys,usr,120000,120);
+    j=txt?extractJSON(txt):null;
+    if(j && !(typeof j.total==='number' && j.dims && j.sample)) j=null;
+  }
+  wrBusy=false;
+  btn.disabled=false; btn.textContent='提交批改 ⟶';
+  if(!j){ showToast('❌ 批改失败：AI 暂不可用，稍后再试（作文批改需要 AI 网络）'); return; }
+  const score=Math.max(0,Math.min(full,Math.round(j.total)));
+  const res=document.getElementById('wrResult');
+  const dims=[['content','内容'],['language','语言'],['structure','结构'],['link','衔接']];
+  const dimsHtml=dims.map(function(d){
+    const v=Math.max(0,Math.min(5,Number(j.dims[d[0]])||0));
+    return '<div class="pnBarRow"><span>'+d[1]+'</span><div class="pnBar"><i style="width:'+Math.round(v/5*100)+'%"></i></div><b>'+v+'/5</b></div>';
+  }).join('');
+  const notes=(Array.isArray(j.notes)?j.notes:[]).slice(0,6).map(function(n){
+    return '<div class="wrNote"><div class="wrOrig">'+gmEsc(n.orig||'')+'</div>'+
+      '<div class="wrComment">🔍 '+gmEsc(n.comment||'')+'</div>'+
+      (n.fix?('<div class="wrFix">✍️ '+gmEsc(n.fix)+'</div>'):'')+'</div>';
+  }).join('');
+  res.innerHTML=
+    '<div class="wrScore"><b>'+score+'</b><span>/ '+full+' 分</span>'+
+      '<div class="pnBarRow" style="margin-top:8px;"><div class="pnBar"><i style="width:'+Math.round(score/full*100)+'%"></i></div></div></div>'+
+    '<div class="pnSec">四维度评分</div>'+dimsHtml+
+    '<div class="pnSec">总评</div><div class="wrSummary">'+gmEsc(j.summary||'')+'</div>'+
+    (notes?('<div class="pnSec">逐句诊断</div>'+notes):'')+
+    (j.sample?('<div class="pnSec">高分范文</div><div class="wrSample">'+gmEsc(j.sample)+'</div>'):'')+
+    '<div class="wBtns"><button class="wBtn again" id="wrAgain">🔁 换一题再写</button></div>';
+  document.getElementById('wrAgain').onclick=function(){ wrTopic=null; wrIntro(); window.scrollTo(0,0); };
+  const wr=getWritings();
+  const ds=function(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  wr.unshift({date:ds(new Date()), type:wrTopic.type, typeName:(wrTopic.type==='big'?'大作文':'小作文'),
+              total:score, full:full});
+  saveWritings(wr);
+  renderPanel();
+  showToast('✅ 批改完成：'+score+'/'+full+' 分');
+}
+$('#wrBack').onclick=function(){ stopTts(); showHome(); };
+$('#wrTypeSeg').addEventListener('click', function(ev){
+  const b=ev.target.closest('button'); if(!b || b.dataset.v===wrType) return;
+  wrType=b.dataset.v; wrTopic=null; wrBusy=false;
+  wrSyncSegs(); wrIntro();
+});
+
+/* ---------- 读后 AI 讨论（阅读室内嵌） ---------- */
+let talk={qs:null, idx:0, busy:false};
+$('#talkBtn').onclick=function(){
+  const box=document.getElementById('talkBox');
+  if(box.style.display==='block'){ box.style.display='none'; return; }
+  box.style.display='block';
+  if(!talk.qs) startTalk();
+};
+function talkPassageText(){
+  return (curPassage&&curPassage.paras)?curPassage.paras.flat().map(function(s){ return s.en; }).join(' ').slice(0,1200):'';
+}
+async function startTalk(){
+  const box=document.getElementById('talkBox');
+  if(!curPassage||!curPassage.paras){ box.innerHTML='<div class="tkCard">先在书桌上放一篇文章，再来讨论吧</div>'; return; }
+  box.innerHTML='<div class="tkCard tkWait">💬 正在根据《'+gmEsc(curPassage.titleEn||'本文')+'》生成讨论问题…</div>';
+  const sys='你是英语讨论课老师。只输出严格JSON对象，禁止输出任何解释或markdown代码块标记。';
+  const usr='基于下面这篇短文，出 3 个开放性英语讨论问题（第 1 个考察对文章观点的理解，第 2 个考察细节推理，第 3 个联系现实生活），每题配中文提示。\n短文：'+talkPassageText()+
+    '\n输出JSON：{"qs":[{"q":"English question","cn":"中文提示（该怎么答）"}]}';
+  let j=null;
+  for(let attempt=0; attempt<2 && !j; attempt++){
+    const txt=await aiChat(sys,usr,60000,60);
+    j=txt?extractJSON(txt):null;
+    if(j && (!Array.isArray(j.qs) || !j.qs.length)) j=null;
+  }
+  if(!j){ box.innerHTML='<div class="tkCard">❌ 问题生成失败（讨论需要 AI 网络），稍后再试。</div>'; return; }
+  talk.qs=j.qs.slice(0,3).map(function(x){ return {q:String(x.q||''), cn:String(x.cn||'')}; });
+  talk.idx=0;
+  renderTalkQ();
+}
+function renderTalkQ(){
+  const box=document.getElementById('talkBox');
+  const q=talk.qs[talk.idx];
+  box.innerHTML=
+    '<div class="inkLabel">💬 读后讨论 <span class="inkHint">（第 '+(talk.idx+1)+' / '+talk.qs.length+' 问）</span></div>'+
+    '<div class="tkCard"><div class="tkQ">'+gmEsc(q.q)+'</div><div class="tkCn">💡 '+gmEsc(q.cn)+'</div>'+
+    '<textarea id="tkInput" class="wrInput" rows="4" placeholder="Answer in English..."></textarea>'+
+    '<div class="wBtns"><button class="wBtn reveal" id="tkSend">提交回答 ⟶</button></div><div id="tkResult"></div></div>';
+  document.getElementById('tkSend').onclick=submitTalkAns;
+}
+async function submitTalkAns(){
+  if(talk.busy) return;
+  const ta=document.getElementById('tkInput');
+  const text=(ta.value||'').trim();
+  if(!text){ showToast('先写下你的回答'); return; }
+  talk.busy=true;
+  const btn=document.getElementById('tkSend');
+  btn.disabled=true; btn.textContent='⏳ AI 点评中…';
+  const sys='你是英语讨论课老师。只输出严格JSON对象，禁止输出任何解释或markdown代码块标记。';
+  const usr='学生刚读完一篇文章，讨论问题是：'+talk.qs[talk.idx].q+
+    '\n学生的回答：'+text+
+    '\n请点评。输出JSON：{"verdict":"good"或"ok"或"weak","feedback":"中文点评 40-80 字（先肯定再指出语法/用词问题）","better":"改进后的英文参考回答"}';
+  let j=null;
+  for(let attempt=0; attempt<2 && !j; attempt++){
+    const txt=await aiChat(sys,usr,60000,30);
+    j=txt?extractJSON(txt):null;
+    if(j && !j.feedback) j=null;
+  }
+  talk.busy=false;
+  if(!j){ btn.disabled=false; btn.textContent='提交回答 ⟶'; showToast('❌ 点评失败：AI 暂不可用'); return; }
+  const res=document.getElementById('tkResult');
+  const cls=j.verdict==='good'?'g':(j.verdict==='weak'?'r':'y');
+  const mark=j.verdict==='good'?'🌟 很棒':(j.verdict==='weak'?'💪 再练练':'👍 不错');
+  res.innerHTML=
+    '<div class="tkVerdict '+cls+'">'+mark+'</div>'+
+    '<div class="tkFeedback">'+gmEsc(j.feedback||'')+'</div>'+
+    (j.better?('<div class="pnSec">参考回答</div><div class="wrSample">'+gmEsc(j.better)+'</div>'):'')+
+    '<div class="wBtns"><button class="wBtn again" id="tkNext">'+(talk.idx<talk.qs.length-1?'下一问 ⟶':'完成讨论 ✓')+'</button></div>';
+  res.scrollIntoView({behavior:'smooth', block:'nearest'});
+  document.getElementById('tkNext').onclick=function(){
+    if(talk.idx<talk.qs.length-1){ talk.idx++; renderTalkQ(); }
+    else{
+      const box=document.getElementById('talkBox');
+      box.innerHTML='<div class="tkCard"><div class="wDone">🎉 讨论完成</div><div class="wDoneSub">能把读到的说出来，才是真正吃透了一篇文章</div>'+
+        '<div class="wBtns"><button class="wBtn again" id="tkRestart">🔄 再讨论一轮</button></div></div>';
+      document.getElementById('tkRestart').onclick=function(){ talk.qs=null; startTalk(); };
+    }
+  };
+}
+
+/* ---------- 仿真模考 ---------- */
+let mk=null;
+function getMockHist(){ try{ return JSON.parse(localStorage.getItem('yt_mock')||'[]'); }catch(e){ return []; } }
+function saveMockHist(h){ try{ localStorage.setItem('yt_mock', JSON.stringify(h.slice(0,10))); }catch(e){} }
+function showMock(){
+  stopTts(); gmStopAll();
+  showOnly('mock');
+  if(!mk) mkIntro();
+  window.scrollTo(0,0);
+}
+function mkIntro(){
+  const hist=getMockHist();
+  $('#mkTimer').textContent=''; $('#mkCount').textContent='';
+  $('#mkTimeBar').style.width='0%';
+  $('#mkReport').innerHTML='';
+  $('#mockStage').innerHTML=
+    '<div class="wCard"><div class="wDone">⏱ 仿真模考</div>'+
+    '<p class="deskTip" style="margin:14px 0 18px;">考研标准难度整卷：阅读 ×2（10 题）+ 选词填空（10 空）+ 长篇段落匹配（10 题），<br>共 30 题，全部离线生成。选好时长，一口气做完，看真实正确率。</p>'+
+    '<div class="seg" id="mkLenSeg" style="margin:0 0 16px;">'+
+      '<button data-v="50" class="on">50 分钟 · 标准卷</button>'+
+      '<button data-v="25">25 分钟 · 快速卷</button>'+
+      '<button data-v="0">不限时</button>'+
+    '</div>'+
+    '<div class="wBtns"><button class="wBtn reveal" id="mkStart">开考 ⟶</button></div>'+
+    (hist.length?('<div class="pnSec">最近成绩</div>'+hist.slice(0,5).map(function(m){
+      return '<div class="pnBarRow"><span>'+gmEsc(m.date.slice(5))+' '+m.secs+'分钟</span><div class="pnBar"><i style="width:'+Math.round(m.right/Math.max(1,m.total)*100)+'%"></i></div><b>'+m.right+'/'+m.total+'</b></div>';
+    }).join('')):'')+
+    '</div>';
+  $('#mkLenSeg').addEventListener('click', function(ev){
+    const b=ev.target.closest('button'); if(!b) return;
+    [...$('#mkLenSeg').children].forEach(function(x){ x.classList.toggle('on', x===b); });
+  });
+  $('#mkStart').onclick=function(){
+    const mins=Number([...$('#mkLenSeg').children].find(function(x){ return x.classList.contains('on'); }).dataset.v);
+    buildMock(mins);
+  };
+}
+async function buildMock(mins){
+  const btn=document.getElementById('mkStart');
+  btn.disabled=true; btn.textContent='⏳ 正在组卷…';
+  try{ await ensureWordBank(); }catch(e){ showToast('词库加载失败，请检查网络后重试'); btn.disabled=false; btn.textContent='开考 ⟶'; return; }
+  const p1=buildPassage('std', LEVELS.std.plan);
+  const p2=buildPassage('std', LEVELS.std.plan);
+  const clz=buildLocalClozeData('kao');   /* CLOZE_LEVELS 键：cet4/cet6/kao */
+  const lr=buildLocalLR('cet6');          /* LR_LEVELS 键：cet4/cet6 */
+  mk={
+    parts:[
+      {type:'read',  label:'Part A · 阅读理解 ①', passage:p1, items:buildCompQuiz(p1), answers:[], t0:Date.now(), t1:0, right:null, total:0},
+      {type:'read',  label:'Part A · 阅读理解 ②', passage:p2, items:buildCompQuiz(p2), answers:[], t0:Date.now(), t1:0, right:null, total:0},
+      {type:'cloze', label:'Part B · 选词填空',   clz:clz, sel:null, t0:Date.now(), t1:0, right:null, total:0},
+      {type:'lr',    label:'Part C · 长篇阅读',   lr:lr, answers:new Array(lr.statements.length).fill(null), t0:Date.now(), t1:0, right:null, total:0}
+    ],
+    cur:0, mins:mins, left:mins*60, timer:null, done:false, t0:Date.now()
+  };
+  btn.disabled=false;
+  if(mins>0){
+    mk.timer=setInterval(function(){
+      mk.left--;
+      const c=document.getElementById('mkTimer');
+      if(c) c.textContent='⏱ '+Math.floor(Math.max(0,mk.left)/60)+':'+String(Math.max(0,mk.left)%60).padStart(2,'0');
+      const bar=document.getElementById('mkTimeBar');
+      if(bar) bar.style.width=Math.max(0, mk.left/(mk.mins*60)*100)+'%';
+      if(mk.left<=0) mkFinish(true);
+    },1000);
+  }
+  mkRenderPart();
+}
+function mkRenderPart(){
+  const part=mk.parts[mk.cur];
+  $('#mkCount').textContent='第 '+(mk.cur+1)+' / '+mk.parts.length+' 部分';
+  $('#mkTimer').textContent = mk.mins>0 ? '⏱ '+Math.floor(mk.left/60)+':'+String(mk.left%60).padStart(2,'0') : '不限时';
+  const st=$('#mockStage');
+  let html='<div class="mkPart"><div class="mkPartHead">'+gmEsc(part.label)+'<span>完成后自动进入下一部分</span></div>';
+  if(part.type==='read'){
+    html+='<div class="clozeCard"><h3 class="mkTitle">'+gmEsc(part.passage.titleEn)+'</h3>'+
+      part.passage.paras.map(function(pa){ return '<p>'+gmEsc(pa.map(function(s){ return s.en; }).join(' '))+'</p>'; }).join('')+'</div>';
+    html+='<div class="inkLabel">Questions '+part.items.length+'</div>';
+    part.items.forEach(function(q,qi){
+      html+='<div class="mkQ" data-qi="'+qi+'"><div class="mkQHead"><span class="wTag">'+gmEsc(q.type)+'题</span> '+gmEsc(q.prompt)+'</div>'+
+        (q.body?('<div class="mkQBody">'+gmEsc(q.body)+'</div>'):'')+
+        '<div class="mkOpts">';
+      q.options.forEach(function(opt,oi){
+        html+='<button class="qOpt'+(part.answers[qi]===oi?' sel':'')+'" data-qi="'+qi+'" data-oi="'+oi+'"><b>'+'ABCD'[oi]+'.</b> '+gmEsc(opt)+'</button>';
+      });
+      html+='</div></div>';
+    });
+  } else if(part.type==='cloze'){
+    const c=part.clz;
+    html+='<div class="clozeCard">';
+    let fi=0;
+    c.passage.paras.forEach(function(pa){
+      html+='<p>';
+      pa.forEach(function(s){
+        let b=null;
+        c.blanks.forEach(function(bb){ if(bb.sent===fi) b=bb; });
+        let toks=s.en.split(' ');
+        if(b){
+          const k=c.blanks.indexOf(b);
+          toks[b.ti]='<span class="clz mkClz'+(part.sel===k?' sel':'')+(b.user?' filled':'')+'" data-b="'+k+'">'+(b.user||('<i>'+(k+1)+'</i>'))+'</span>';
+        }
+        html+=toks.join(' ')+' ';
+        fi++;
+      });
+      html+='</p>';
+    });
+    html+='</div><div class="inkLabel">词库 A–O（点选单词 → 点空格填入；再点空格取回）</div><div class="clzBank" id="mkBank"></div>';
+  } else if(part.type==='lr'){
+    const lr=part.lr;
+    html+='<div class="clozeCard"><h3 class="mkTitle">'+gmEsc(lr.title||'Section B')+'</h3>'+
+      lr.paras.map(function(pa,i){
+        return '<p><b class="lrStmt">'+(lr.letters[i]||String.fromCharCode(65+i))+'</b> '+gmEsc(pa.en)+'</p>';
+      }).join('')+'</div>';
+    html+='<div class="inkLabel">为每个句子选择出处段落</div>';
+    lr.statements.forEach(function(s2,i){
+      html+='<div class="mkQ"><div class="mkQBody">'+(i+1)+'. '+gmEsc(s2.text)+'</div><div class="mkOpts mkLetters">';
+      lr.letters.forEach(function(L){
+        html+='<button class="mkL'+(part.answers[i]===L?' sel':'')+'" data-qi="'+i+'" data-l="'+L+'">'+L+'</button>';
+      });
+      html+='</div></div>';
+    });
+  }
+  html+='<div class="wBtns"><button class="wBtn reveal" id="mkPartDone">'+(mk.cur<mk.parts.length-1?'完成本部分，进入下一部分 ⟶':'交卷，查看成绩 ⟶')+'</button></div></div>';
+  st.innerHTML=html;
+  st.querySelectorAll('.qOpt').forEach(function(b){
+    b.onclick=function(){
+      const qi=+b.dataset.qi, oi=+b.dataset.oi;
+      mk.parts[mk.cur].answers[qi]=oi;
+      const box=b.closest('.mkOpts');
+      [...box.children].forEach(function(x,j){ x.classList.toggle('sel', j===oi); });
+    };
+  });
+  st.querySelectorAll('.mkL').forEach(function(b){
+    b.onclick=function(){
+      const qi=+b.dataset.qi, L=b.dataset.l;
+      mk.parts[mk.cur].answers[qi]=L;
+      const box=b.closest('.mkLetters');
+      [...box.children].forEach(function(x){ x.classList.toggle('sel', x.dataset.l===L); });
+    };
+  });
+  if(part.type==='cloze'){
+    const bk=document.getElementById('mkBank');
+    part.clz.bank.forEach(function(w){
+      const b=document.createElement('button');
+      b.className='clzChip'+(w.used?' used':'')+(part.sel===w.word?' sel':'');
+      b.innerHTML='<b>'+w.letter+'</b>'+gmEsc(w.word);
+      b.onclick=function(){
+        if(w.used){ showToast('这个词已经填入了'); return; }
+        part.sel=(part.sel===w.word)?null:w.word;
+        mkRenderPart();
+      };
+      bk.appendChild(b);
+    });
+    st.querySelectorAll('.mkClz').forEach(function(el){
+      el.onclick=function(){
+        const k=+el.dataset.b, b=part.clz.blanks[k];
+        if(part.sel){
+          const old=part.clz.bank.find(function(x){ return x.word===b.user; });
+          if(old) old.used=false;
+          b.user=part.sel;
+          const nb=part.clz.bank.find(function(x){ return x.word===part.sel; });
+          if(nb) nb.used=true;
+          part.sel=null;
+          mkRenderPart();
+        }else if(b.user){
+          const old=part.clz.bank.find(function(x){ return x.word===b.user; });
+          if(old) old.used=false;
+          b.user=null;
+          mkRenderPart();
+        }else{ showToast('先在下方词库点选一个单词'); }
+      };
+    });
+  }
+  document.getElementById('mkPartDone').onclick=mkPartDone;
+  window.scrollTo(0,0);
+}
+function mkPartDone(){
+  const part=mk.parts[mk.cur];
+  part.t1=Date.now();
+  if(part.type==='read'){
+    part.right=part.items.reduce(function(n,q,qi){ return n+((part.answers[qi]===q.ans)?1:0); },0);
+    part.total=part.items.length;
+    part.items.forEach(function(q,qi){
+      if(part.answers[qi]!==q.ans){
+        addWrong({type:q.type, prompt:q.prompt, body:q.body||'', options:q.options, ans:q.ans,
+                  your:(part.answers[qi]!=null)?q.options[part.answers[qi]]:null, yourIdx:part.answers[qi],
+                  title:part.passage.titleEn});
+      }
+    });
+  } else if(part.type==='cloze'){
+    part.clz.done=true;
+    let right=0;
+    part.clz.blanks.forEach(function(b){
+      b.ok=!!b.user && (b.user.toLowerCase()===b.word);
+      if(b.ok) right++;
+    });
+    part.right=right; part.total=part.clz.blanks.length;
+  } else if(part.type==='lr'){
+    let right=0;
+    part.lr.statements.forEach(function(s2,i){ if(part.answers[i]===s2.letter) right++; });
+    part.right=right; part.total=part.lr.statements.length;
+  }
+  if(mk.cur<mk.parts.length-1){ mk.cur++; mkRenderPart(); }
+  else mkFinish(false);
+}
+function mkFinish(timeout){
+  if(mk.done) return;
+  mk.done=true;
+  if(mk.timer){ clearInterval(mk.timer); mk.timer=null; }
+  const usedSecs=Math.round((Date.now()-mk.t0)/1000);
+  let right=0, total=0;
+  const rows=mk.parts.map(function(p){
+    if(p.right==null){ p.right=0; p.total=(p.items||[]).length || (p.clz?p.clz.blanks.length:0) || (p.lr?p.lr.statements.length:0); }
+    right+=p.right; total+=p.total;
+    const secs=Math.round(((p.t1||Date.now())-p.t0)/1000);
+    return '<div class="pnBarRow"><span>'+gmEsc(p.label)+'</span><div class="pnBar"><i style="width:'+Math.round(p.right/Math.max(1,p.total)*100)+'%"></i></div><b>'+p.right+'/'+p.total+'</b></div>';
+  }).join('');
+  const minsUsed=mk.mins>0?Math.max(1,Math.min(mk.mins, mk.mins-Math.ceil(mk.left/60))):Math.max(1,Math.round(usedSecs/60));
+  $('#mockStage').innerHTML='';
+  $('#mkTimer').textContent='';
+  $('#mkCount').textContent='已交卷';
+  $('#mkReport').innerHTML=
+    '<div class="wCard"><div class="wDone">'+(timeout?'⏰ 时间到，自动交卷':'🎉 交卷成功')+'</div>'+
+    '<div class="wDoneSub">正确 '+right+' / '+total+' · 用时约 '+minsUsed+' 分钟</div>'+
+    '<div class="pnSec">各部分得分</div>'+rows+
+    '<div class="wBtns"><button class="wBtn again" id="mkAgain">🔁 再来一卷</button></div></div>';
+  const hist=getMockHist();
+  const ds=function(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  hist.unshift({date:ds(new Date()), secs:minsUsed, right:right, total:total});
+  saveMockHist(hist);
+  showToast((timeout?'时间到，已自动交卷':'交卷完成')+'：正确 '+right+'/'+total);
+}
+$('#mockBack').onclick=function(){
+  if(mk && !mk.done && mk.timer){ if(!confirm('模考进行中，确定离开吗？（计时将停止）')) return; }
+  if(mk && mk.timer){ clearInterval(mk.timer); mk.timer=null; }
+  mk=null;
+  showHome();
+};

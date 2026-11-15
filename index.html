@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=41">
+<link rel="stylesheet" href="assets/css/app.css?v=44">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
@@ -166,6 +166,7 @@
   <button class="shelfItem" id="shelfRead"><i>📖</i><span>阅读</span></button>
   <button class="shelfItem" id="shelfWords"><i>🔤</i><span>背词</span></button>
   <button class="shelfItem" id="shelfCloze"><i>🧩</i><span>填空</span></button>
+  <button class="shelfItem" id="shelfWrite"><i>✍️</i><span>写作</span></button>
   <button class="shelfItem" id="shelfSpeak"><i>🎙️</i><span>跟读</span></button>
   <button class="shelfItem" id="shelfGames"><i>🎮</i><span>游戏</span></button>
   <button class="shelfItem" id="shelfMe"><i>⭐</i><span>书房</span></button>
@@ -259,6 +260,7 @@
           <button class="stationeryItem" id="speakBtn">🎙️ 录音跟读<span>发音打分 · 逐句训练</span></button>
           <button class="stationeryItem" id="longReadBtn">📄 长篇阅读 · 段落匹配<span>四六级 Section B 真题题型</span></button>
           <button class="stationeryItem" id="gameBtn">🎮 游戏角<span>消消乐 · 拼词 · 快答 · 救援</span></button>
+          <button class="stationeryItem" id="mockBtn">⏱ 仿真模考<span>阅读 · 填空 · 长篇 · 限时整卷</span></button>
         </div>
         <div class="deskTip">
           · 内容由本地引擎随机组合生成，并避开你看过的文章，"想要就有"。<br>
@@ -297,6 +299,9 @@
     </div>
     <button class="brushBtn slim" id="pwaInstallBtn">📲 安装到手机桌面</button>
     <p class="deskTip" id="pwaInstallHint" style="margin-top:10px;">安装后桌面出现独立图标，全屏运行、支持离线，像正常 App 一样使用。</p>
+
+    <!-- 学习数据面板（renderPanel 填充） -->
+    <div id="panel"></div>
 
     <div class="inkLabel">我的收藏 <span class="inkHint">（点卡片回看，点星星取消）</span></div>
     <div id="favList"></div>
@@ -494,6 +499,33 @@
     <div id="gmStats"></div>
   </section>
 
+  <!-- AI 作文批改 -->
+  <section id="writing">
+    <div class="sceneHead">
+      <button class="inkBtn" id="wrBack">‹</button>
+      <div class="sceneTitle">AI 作文批改</div>
+      <div class="sceneCount" id="wrCount"></div>
+    </div>
+    <div class="seg" id="wrTypeSeg" style="margin:2px 2px 14px;">
+      <button data-v="big" class="on">大作文 · 图画类</button>
+      <button data-v="small">小作文 · 书信</button>
+    </div>
+    <div id="wrStage"></div>
+  </section>
+
+  <!-- 仿真模考 -->
+  <section id="mock">
+    <div class="sceneHead">
+      <button class="inkBtn" id="mockBack">‹</button>
+      <div class="sceneTitle">仿真模考</div>
+      <span class="streakChip" id="mkTimer"></span>
+      <div class="sceneCount" id="mkCount"></div>
+    </div>
+    <div class="wBarWrap" style="margin:0 2px 14px;"><div id="mkTimeBar"></div></div>
+    <div id="mockStage"></div>
+    <div id="mkReport"></div>
+  </section>
+
   <div id="toast"></div>
 
   <!-- 阅读室（线装书） -->
@@ -507,6 +539,7 @@
       <button class="inkBtn starBtn" id="favBtn" title="收藏">☆</button>
       <button class="inkBtn" id="flipBtn" title="翻页 / 滚动">📖</button>
       <button class="inkBtn" id="quizBtn" title="做题">📝</button>
+      <button class="inkBtn" id="talkBtn" title="读后讨论">💬</button>
       <span class="pgCtl" id="pageCtl">
         <button class="inkBtn" id="pgPrev" title="上一页">‹</button>
         <span class="pgInd" id="pgInd">1 / 1</span>
@@ -537,19 +570,22 @@
       <summary>📖 本文重点词汇 <span id="vocabCount" style="color:var(--muted);font-weight:400;"></span></summary>
       <ul id="vocabList"></ul>
     </details>
+
+    <!-- 读后 AI 讨论（💬 切换显示） -->
+    <div id="talkBox" style="display:none;"></div>
   </section>
 
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=41"></script>
-<script src="assets/js/book.js?v=39"></script>
+<script src="assets/js/core.js?v=44"></script>
+<script src="assets/js/book.js?v=42"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){
-  const SECS=['home','reader','profile','words','quiz','cloze','speak','longread','games'];
-  const TITLES={home:'工作台',reader:'书房 · 阅读',profile:'我的书房',words:'每日背词',quiz:'阅读测试',cloze:'选词填空',speak:'跟读训练',longread:'长篇阅读',games:'游戏角'};
-  const SHELF_OF={home:'shelfHome',words:'shelfWords',cloze:'shelfCloze',profile:'shelfMe',reader:'shelfRead',quiz:'shelfRead',speak:'shelfSpeak',games:'shelfGames'};
+  const SECS=['home','reader','profile','words','quiz','cloze','speak','longread','games','writing','mock'];
+  const TITLES={home:'工作台',reader:'书房 · 阅读',profile:'我的书房',words:'每日背词',quiz:'阅读测试',cloze:'选词填空',speak:'跟读训练',longread:'长篇阅读',games:'游戏角',writing:'写作批改',mock:'仿真模考'};
+  const SHELF_OF={home:'shelfHome',words:'shelfWords',cloze:'shelfCloze',profile:'shelfMe',reader:'shelfRead',quiz:'shelfRead',speak:'shelfSpeak',games:'shelfGames',writing:'shelfWrite'};
   const $id=(i)=>document.getElementById(i);
 
   function setActive(secId){
@@ -562,6 +598,7 @@
   const go={ shelfHome:()=>showHome(), shelfWords:()=>showWords(), shelfCloze:()=>openCloze('cet4'),
             shelfSpeak:()=>showSpeak(), shelfMe:()=>showProfile(),
             shelfGames:()=>{ if(typeof showGames==='function') showGames(); },
+            shelfWrite:()=>{ if(typeof showWriting==='function') showWriting(); },
             shelfRead:()=>{
               if(typeof curPassage!=='undefined' && curPassage && curPassage.titleEn){ showReader(); }
               else { showToast('书桌上还没有卷子：先在工作台「研墨提笔」生成一篇吧'); showHome(); }
@@ -602,6 +639,9 @@
   /* 游戏角入口（文具盒） */
   const gmBtn=document.getElementById('gameBtn');
   if(gmBtn) gmBtn.addEventListener('click', function(){ if(typeof showGames==='function') showGames(); });
+  /* 仿真模考入口（文具盒） */
+  const mockBtn=document.getElementById('mockBtn');
+  if(mockBtn) mockBtn.addEventListener('click', function(){ if(typeof showMock==='function') showMock(); });
   const lrSeg=document.getElementById('lrLevelSeg');
   if(lrSeg) lrSeg.addEventListener('click', function(ev){
     const b=ev.target.closest('button'); if(!b) return;
