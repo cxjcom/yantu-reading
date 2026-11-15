@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=57">
+<link rel="stylesheet" href="assets/css/app.css?v=58">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
@@ -478,8 +478,10 @@
           <div class="btnRow">
             <button id="aiSave">保存</button>
             <button id="aiTest">测试连通</button>
+            <button id="epTestBtn">🔌 端点自检</button>
           </div>
           <div id="aiCfgMsg"></div>
+          <div id="epTestOut" class="cfgNote" style="display:none;text-align:left;line-height:1.9;"></div>
         </details>
 
         <button class="brushBtn" id="genBtn">研墨提笔 · 开始生成阅读 ⟶</button>
@@ -837,8 +839,8 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=57"></script>
-<script src="assets/js/book.js?v=55"></script>
+<script src="assets/js/core.js?v=58"></script>
+<script src="assets/js/book.js?v=56"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){

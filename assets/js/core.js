@@ -1165,6 +1165,56 @@ $('#aiTest').onclick=async function(){
   if(t){ m.textContent='✅ 连通成功：'+t.trim().slice(0,30); m.style.color='#2e9e5b'; }
   else{ m.textContent='❌ 未连通（检查地址/Key/网络）；不影响本地生成'; m.style.color='#d9534f'; }
 };
+/* 端点自检：在当前浏览器逐个探测各通道，被插件/安全软件拦截一目了然 */
+$('#epTestBtn').onclick=async function(){
+  const box=document.getElementById('epTestOut');
+  box.style.display='block'; box.innerHTML='检测中…';
+  const lines=[];
+  /* ① WorkBuddy 云端 */
+  try{
+    if(window.WorkBuddyCloud && WB_CLOUD){
+      const t0=Date.now();
+      const ms=await Promise.race([
+        WB_CLOUD.llm.models.list(),
+        new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('15 秒超时')); },15000); })
+      ]);
+      const n=(ms||[]).filter(function(m){ return m&&m.disabled!==true; }).length;
+      lines.push('✅ WorkBuddy 云端：可达，'+n+' 个模型（'+(Date.now()-t0)+'ms）');
+    }else{
+      lines.push('❌ WorkBuddy SDK 未加载（lib/workbuddy-cloud-sdk.global.js 加载失败，试试强刷）');
+    }
+  }catch(e){
+    lines.push('❌ WorkBuddy 云端：不可达（'+String(e&&e.message||e).slice(0,40)+'）');
+    lines.push('　└ 常见原因：<b>广告拦截/隐私插件拦了 workbuddy.host</b>，或该域名被安全软件拦截——把域名加入白名单或临时关掉插件再试');
+  }
+  /* ② Pollinations 兜底 */
+  try{
+    const t1=Date.now();
+    const r=await fetch('https://text.pollinations.ai/openai',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'openai',messages:[{role:'user',content:'hi'}]})});
+    let extra='';
+    if(r.status===400||r.status===402) extra='（免费限流：每 45 秒 1 次，等一会就好）';
+    lines.push((r.ok?'✅':'⚠️')+' Pollinations 兜底：HTTP '+r.status+'（'+(Date.now()-t1)+'ms）'+extra);
+  }catch(e){
+    lines.push('❌ Pollinations 兜底：不可达（'+String(e&&e.message||e).slice(0,40)+'）');
+    lines.push('　└ 常见原因：被插件拦截或无网络');
+  }
+  /* ③ 自定义端点 */
+  const cfg=aiCfg();
+  if(cfg.url){
+    try{
+      const t2=Date.now();
+      const r=await fetch(cfg.url,{method:'POST',headers:(function(){const h={'Content-Type':'application/json'}; if(cfg.key) h['Authorization']='Bearer '+cfg.key; return h;})(),
+        body:JSON.stringify({model:cfg.model||'gpt-4o-mini',messages:[{role:'user',content:'hi'}],max_tokens:5})});
+      lines.push((r.ok?'✅':'⚠️')+' 自定义接口：HTTP '+r.status+'（'+(Date.now()-t2)+'ms）');
+    }catch(e){
+      lines.push('❌ 自定义接口：不可达（'+String(e&&e.message||e).slice(0,40)+'）');
+    }
+  }else{
+    lines.push('ℹ️ 未配置自定义接口——免费通道全挂时无退路，建议在上方注册一个（智谱 GLM-4-Flash 免费）');
+  }
+  box.innerHTML=lines.join('<br>');
+};
 Array.prototype.forEach.call(document.querySelectorAll('.aiPreset'), function(b){
   b.addEventListener('click', function(){
     document.getElementById('aiUrl').value = b.dataset.u;
