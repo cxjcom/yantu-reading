@@ -931,6 +931,32 @@ body:has(#splash){overflow:hidden;}
   82%{opacity:.45;}
   100%{transform:translate(16px,-108vh); opacity:0;}
 }
+/* 万家灯火：夜色城郭 + 窗灯次第点亮 */
+.spCity{
+  position:absolute; left:0; right:0; bottom:0; z-index:1;
+  height:clamp(110px, 20vh, 200px);
+  pointer-events:none;
+}
+.spHorizon{
+  position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+  width:130%; height:130px;
+  background:radial-gradient(60% 100% at 50% 100%, rgba(201,143,45,.18), rgba(181,56,47,.07) 55%, transparent 75%);
+  opacity:0; animation:spFade 1.4s ease .25s forwards;
+}
+.spSkyline{position:absolute; inset:0; width:100%; height:100%;}
+.spRoofs rect{fill:#191209;}
+.spWin{
+  fill:#e9b45c; opacity:0;
+  animation:spWinIn .55s ease var(--d, 1s) forwards;
+}
+.spLightsGlow .spWin{fill:#c98f2d;}
+.spWinLit{fill:#f4c563;}
+.spWinFlick{
+  animation:spWinIn .55s ease var(--d, 1s) forwards,
+            spFlick 2.8s ease-in-out calc(var(--d, 1s) + .9s) infinite;
+}
+@keyframes spWinIn{to{opacity:1;}}
+@keyframes spFlick{0%,100%{opacity:1;} 50%{opacity:.55;}}
 
 /* =====================================================
    游戏角：消消乐 / 拼词 / 快答 / 救援（gm* 前缀）
