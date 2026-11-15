@@ -1386,6 +1386,9 @@ function aiDiagSummary(){
   }catch(e){ return ''; }
 }
 window.__ytAiDiag=function(){ try{ return JSON.parse(localStorage.getItem('yt_aidiag')||'[]'); }catch(e){ return []; } };
+/* ---------- 端点健康记忆：限流冷却 / WB 最近成功，决定本轮谁上场 ---------- */
+function epHealth(){ try{ return JSON.parse(localStorage.getItem('yt_ephealth')||'{}'); }catch(e){ return {}; } }
+function epHealthSet(k,v){ try{ var h=epHealth(); h[k]=v; localStorage.setItem('yt_ephealth', JSON.stringify(h)); }catch(e){} }
 async function aiChat(sys,usr,timeoutMs,minLen,opts){
   AI_CANCEL=false;   /* 复位取消标记（上次任务取消后不污染本次，「测试连通」不再永久失败） */
   AI_CTRLS=[];
@@ -1399,20 +1402,23 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   const abortLosers=function(){ AI_CTRLS.forEach(function(c){ try{c.abort();}catch(e){} }); AI_CTRLS=[]; };
   const total=timeoutMs||180000;
   /* 包装一次端点尝试：最先拿到"足够长文本"的端点胜出，立即掐掉其余流 */
-  const wrap=function(name,msStart,p){
+  const wrap=function(name,msStart,p,hooks){
     return p.then(function(txt){
       if(settled||AI_CANCEL) return null;
       const ms=Date.now()-msStart;
       if(txt&&txt.trim().length>minL){
         settled=true; mark(name,'ok',ms,txt.length+'字'); abortLosers(); aiDiagPush(diag);
+        if(hooks&&hooks.win) hooks.win();
         return txt;
       }
       mark(name,'空/短',ms,(txt||'').length+'字');
+      if(hooks&&hooks.lose) hooks.lose('');
       return null;
     }).catch(function(e){
       if(settled||AI_CANCEL) return null;   /* 胜出后对输家的掐流不算失败 */
       const msg=String(e&&e.message||e);
       mark(name,/abort/i.test(msg)?'超时':msg.slice(0,30),Date.now()-msStart);
+      if(hooks&&hooks.lose) hooks.lose(msg);
       return null;
     });
   };
@@ -1433,30 +1439,72 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   const tasks=[];
   const t0=Date.now();
   let raceStarted=false;
-  /* 并行竞速①：自定义端点与免费兜底立即开跑——手机上某端点被墙不再拖死整条链路 */
+  const health=epHealth();
+  const now=Date.now();
+  /* ① 自定义端点：用户付费配置，永远参赛 */
   if(cfg.url) tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000))));
-  AI_FREE.forEach(function(ep,i){ tasks.push(wrap('兜底'+(i+1), t0, fetchTask('兜底'+(i+1), ep.url, ep.model, ep.key||'', Math.min(total,100000)))); });
-  /* Ollama 本地：3s 内探测可达才加入竞速（不阻塞其他端点） */
+  /* ② WB 云端：模型 id 优先用 localStorage 缓存（24h）——列表请求失败/超时不再把 WB 判死；
+     无缓存才请求列表（12s 超时），仍失败则盲试 'auto'（历次实测必通） */
+  let wbId='';
+  let wbCachedIds=null;
+  try{
+    const c=JSON.parse(localStorage.getItem('yt_wbmodels')||'null');
+    if(c&&Array.isArray(c.ids)&&c.ids.length&&(now-c.t)<86400000) wbCachedIds=c.ids;
+  }catch(e){}
+  if(wbCachedIds){ wbId=wbCachedIds[0]; }
+  else if(WB_CLOUD){
+    try{
+      WB_MODELS=await Promise.race([
+        WB_CLOUD.llm.models.list(),
+        new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('list 超时')); },12000); })
+      ]);
+      if(!Array.isArray(WB_MODELS)) WB_MODELS=[];
+    }catch(e){ WB_MODELS=[]; }
+    const ids=WB_MODELS.filter(function(m){ return m&&m.disabled!==true; }).map(function(m){ return m.id; });
+    if(ids.length){
+      wbId=ids[0];
+      try{ localStorage.setItem('yt_wbmodels', JSON.stringify({t:now, ids:ids.slice(0,12)})); }catch(e){}
+    }
+  }
+  if(wbId && WB_CLOUD){
+    tasks.push(wrap('WB:'+wbId, Date.now(), wbCloudChat(msgs,total,temp,wbId), {
+      win:function(){ epHealthSet('WB_OK', Date.now()); },
+      lose:function(){ epHealthSet('WB_FAIL', Date.now()); }
+    }));
+  }else{
+    mark('WB','不可达/无模型',Date.now()-t0);
+    epHealthSet('WB_FAIL', Date.now());
+  }
+  /* ③ Pollinations 免费档：每 IP 45s 仅 1 次（超限 400/402）。
+     WB 健康（10 分钟内成功过）时不发射，免得白白烧配额还赢不了；
+     WB 缺席/刚失败才顶上，且尊重限流冷却 */
+  if(AI_FREE.length){
+    let gate='';
+    if(health.POLL_FAIL && (now-health.POLL_FAIL)<60000) gate='限流冷却 '+Math.ceil((60000-(now-health.POLL_FAIL))/1000)+'s';
+    else if(health.POLL_START && (now-health.POLL_START)<46000) gate='距上次请求<45s';
+    else if(wbId && WB_CLOUD && health.WB_OK && (now-health.WB_OK)<600000) gate='WB健康';
+    if(gate){
+      mark('POLL','跳过',0,gate);
+    }else{
+      const ep=AI_FREE[0];
+      const msStart=Date.now();
+      epHealthSet('POLL_START', msStart);
+      const p=fetchTask('POLL', ep.url, ep.model, ep.key||'', Math.min(total,100000))
+        .then(function(txt){ if(txt&&txt.trim().length>minL) epHealthSet('POLL_OK', Date.now()); return txt; })
+        .catch(function(e){
+          const m=String(e&&e.message||e);
+          if(/HTTP (400|402|403|429)/.test(m)) epHealthSet('POLL_FAIL', Date.now());
+          throw e;
+        });
+      tasks.push(wrap('POLL', msStart, p));
+    }
+  }
+  /* ④ Ollama 本地：3s 内探测可达才加入竞速（不阻塞其他端点） */
   ollamaProbe().then(function(ok){
     if(ok && !settled && !AI_CANCEL && !raceStarted){
       tasks.push(wrap('Ollama', Date.now(), fetchTask('Ollama','http://localhost:11434/v1/chat/completions', cfg.ollamaModel||'qwen2.5:7b','', Math.min(total,120000))));
     }
   });
-  /* 并行竞速②：WB 云端（模型列表 10s 拿不到视为不可达，跳过 WB，其余继续跑） */
-  if(WB_CLOUD){
-    try{
-      if(!WB_MODELS){
-        WB_MODELS=await Promise.race([
-          WB_CLOUD.llm.models.list(),
-          new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('list 超时')); },10000); })
-        ]);
-        if(!Array.isArray(WB_MODELS)) WB_MODELS=[];
-      }
-    }catch(e){ WB_MODELS=[]; }
-    const id=(WB_MODELS.filter(function(m){ return m&&m.disabled!==true; })[0]||{}).id;
-    if(id) tasks.push(wrap('WB:'+id, Date.now(), wbCloudChat(msgs,total,temp,id)));
-    else mark('WB','不可达/无模型',Date.now()-t0);
-  }
   raceStarted=true;
   const results=await Promise.all(tasks);
   if(AI_CANCEL) return null;
