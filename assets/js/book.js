@@ -276,7 +276,7 @@
           if (!on) return;
           const idx = S.pages.findIndex(pg =>
             pg.type === 'paras' ? pg.els.includes(on) : pg.para === on);
-          if (idx >= 0 && idx !== S.pi){ S.pi = idx; showPage(idx); }
+          if (idx >= 0 && idx !== S.pi && !S.busy){ S.pi = idx; showPage(idx); }
         }, 120);
       }).observe(a, { subtree:true, attributes:true, attributeFilter:['class'] });
     }
@@ -410,8 +410,14 @@
 
   /* ---------- 点词查词：点击文章单词 → 释义弹层（数据来自 WORD_BANK） ---------- */
   let __wordPop = null;
+  let __wordPopCloser = null;
+  function wpEsc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
   function closeWordPop(){
     if(__wordPop){ __wordPop.remove(); __wordPop = null; }
+    if(__wordPopCloser){ document.removeEventListener('click', __wordPopCloser); __wordPopCloser = null; }
   }
   function lookupWord(w){
     const tries = [[w, w]];
@@ -432,11 +438,11 @@
     const tags = String(entry[5]||'');
     const ipa = entry[1];
     pop.innerHTML =
-      '<div class="wpWord">' + entry[0] + (ipa ? '<span class="wpIpa">' + ipa + '</span>' : '') + '</div>' +
-      (base && base !== entry[0].toLowerCase() ? '<div class="wpBase">原型词：' + base + '</div>' : '') +
-      (tags ? '<div class="wpTags">' + tags + '</div>' : '') +
-      '<div class="wpMeaning">' + entry[2] + '</div>' +
-      (entry[3] ? '<div class="wpEx">' + entry[3] + '<br>' + entry[4] + '</div>' : '') +
+      '<div class="wpWord">' + wpEsc(entry[0]) + (ipa ? '<span class="wpIpa">' + wpEsc(ipa) + '</span>' : '') + '</div>' +
+      (base && base !== entry[0].toLowerCase() ? '<div class="wpBase">原型词：' + wpEsc(base) + '</div>' : '') +
+      (tags ? '<div class="wpTags">' + wpEsc(tags) + '</div>' : '') +
+      '<div class="wpMeaning">' + wpEsc(entry[2]) + '</div>' +
+      (entry[3] ? '<div class="wpEx">' + wpEsc(entry[3]) + '<br>' + wpEsc(entry[4]) + '</div>' : '') +
       '<div class="wpBtns">' +
       '<button class="wpBtn" data-act="speak">🔊 发音</button>' +
       '<button class="wpBtn" data-act="add">＋ 加入背词</button></div>';
@@ -467,9 +473,14 @@
     };
     __wordPop = pop;
     setTimeout(function(){
-      document.addEventListener('click', function closer(ev){
-        if(!pop.contains(ev.target)){ pop.remove(); document.removeEventListener('click', closer); __wordPop = null; }
-      });
+      __wordPopCloser = function closer(ev){
+        if(!pop.contains(ev.target)){
+          pop.remove(); __wordPop = null;
+          document.removeEventListener('click', closer);
+          if(__wordPopCloser === closer) __wordPopCloser = null;
+        }
+      };
+      document.addEventListener('click', __wordPopCloser);
     }, 30);
   }
   function bindWordLookup(){
@@ -490,7 +501,11 @@
         }
       }
       if(typeof WORD_BANK === 'undefined' || !WORD_BANK.length) return;
-      const rng = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+      let rng = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+      if(!rng && document.caretPositionFromPoint){
+        const cp = document.caretPositionFromPoint(e.clientX, e.clientY);   /* Firefox */
+        rng = cp ? { startContainer: cp.offsetNode, startOffset: cp.offset } : null;
+      }
       if(!rng || !rng.startContainer || rng.startContainer.nodeType !== 3) return;
       const text = rng.startContainer.textContent, off = rng.startOffset;
       const isW = (ch) => /[A-Za-z'’-]/.test(ch);
@@ -557,11 +572,11 @@
   document.addEventListener('visibilitychange', function(){
     if(document.visibilityState === 'hidden'){
       /* 恢复待定期间：页面刚载入尚未读到保存位置，此时保存会用第 1 页覆盖真实进度 */
-      if(!(__pendingRestore && (typeof curPassage === 'undefined' || !curPassage || __pendingRestore.id === curPassage.id))) saveCur();
+      if(!S.restoreActive) saveCur();
     }
   });
   window.addEventListener('beforeunload', function(){
-    if(!(__pendingRestore && (typeof curPassage === 'undefined' || !curPassage || __pendingRestore.id === curPassage.id))) saveCur();
+    if(!S.restoreActive) saveCur();
   });
   let __scrollSave = null;
   window.addEventListener('scroll', function(){

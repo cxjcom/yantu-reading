@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=37">
+<link rel="stylesheet" href="assets/css/app.css?v=40">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
@@ -435,8 +435,8 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=37"></script>
-<script src="assets/js/book.js?v=35"></script>
+<script src="assets/js/core.js?v=40"></script>
+<script src="assets/js/book.js?v=38"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){
@@ -534,13 +534,22 @@
       const reader=new FileReader();
       reader.onload=function(){
         try{
+          /* 安全校验：仅接受本应用导出的备份；白名单键防覆盖 AI 配置（yt_aicfg 内含用户密钥，
+             恶意备份可借此外传 Key），防注入 XSS 数据进收藏/历史/错题本 */
           const j=JSON.parse(reader.result);
+          if(j.app!=='yantu-reading'){ showToast('导入失败：不是研途阅读的备份文件'); return; }
           const data=j.data||j;
-          let n=0;
+          const SAFE_KEYS=['yt_stats','yt_words','yt_wordfilter','yt_ttsrate','yt_theme','yt_qmode',
+            'yt_lrlevel','yt_gamelevel','yt_games','yt_favs','yt_history','yt_wrongbook',
+            'yt_seen','yt_dseen','yt_dlast','yt_ai_read','yt_ai_cloze','yt_ai_talk','yt_ai_lr'];
+          let n=0, skipped=0;
           Object.keys(data).forEach(function(k){
-            if(k.indexOf('yt_')===0 && typeof data[k]==='string'){ localStorage.setItem(k, data[k]); n++; }
+            if(SAFE_KEYS.indexOf(k)<0 || typeof data[k]!=='string'){ skipped++; return; }
+            try{ localStorage.setItem(k, data[k]); n++; }
+            catch(err){ skipped++; }   /* 单键失败（如超配额）不影响其余键 */
           });
-          showToast('✅ 已恢复 '+n+' 项数据，即将刷新页面');
+          if(!n){ showToast('导入失败：备份里没有可恢复的数据'); return; }
+          showToast('✅ 已恢复 '+n+' 项数据'+(skipped?('，跳过 '+skipped+' 项'):'')+'，即将刷新页面');
           setTimeout(function(){ location.reload(); }, 900);
         }catch(e){ showToast('导入失败：文件格式不正确'); }
       };

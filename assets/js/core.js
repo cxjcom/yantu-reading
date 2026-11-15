@@ -1070,13 +1070,19 @@ function buildPassage(diff, planOverride){
     p.wordCount = p.paras.flat().reduce((n,s)=>n + s.en.trim().split(/\s+/).length, 0);
     p.subjectEn = dEn.subject || '';   /* 主旨题正确项：本文主题短语 */
     last = p;
-    const sig = p.paras.flat().map(s=>s.en).join('~');
+    const sig = seenHash(p.paras.flat().map(s=>s.en).join('~'));
     if(!seen.includes(sig)){ pushSeen(sig); return p; }
   }
   return last; // 撞重概率极低；兜底返回
 }
 
 /* ---------- 已读指纹（避免重复） ---------- */
+/* 存短哈希而非全文指纹：60 篇全文 ≈150KB，哈希后仅几十字节 */
+function seenHash(sig){
+  let h=5381;
+  for(let i=0;i<sig.length;i++){ h=((h<<5)+h+sig.charCodeAt(i))|0; }
+  return 'h'+(h>>>0).toString(36)+'.'+sig.length.toString(36);
+}
 function getSeen(){ try{ return JSON.parse(localStorage.getItem('yt_seen')||'[]'); }catch(e){ return []; } }
 function pushSeen(sig){
   let seen=getSeen(); seen.push(sig);
@@ -1244,7 +1250,7 @@ function renderPassage(p){
   stopTts();
   curPassage=p;
   $('#metaChips').innerHTML =
-    `<span>${p.emoji} ${p.topicName}</span><span>${DIFF_LABEL[p.diff]}</span><span>约 ${p.wordCount} 词</span><span>${p.source==='ai'?'🌐 AI 生成':'📦 本地引擎'}</span>`;
+    `<span>${gmEsc(p.emoji+' '+p.topicName)}</span><span>${DIFF_LABEL[p.diff]}</span><span>约 ${p.wordCount} 词</span><span>${p.source==='ai'?'🌐 AI 生成':'📦 本地引擎'}</span>`;
   $('#titleEn').textContent = p.titleEn;
   $('#titleCn').textContent = p.titleCn;
   const art=$('#article'); art.innerHTML='';
@@ -1253,8 +1259,8 @@ function renderPassage(p){
     para.forEach(s=>{
       const div=document.createElement('div'); div.className='sent';
       div.innerHTML =
-        `<p class="en">${s.en}</p>`+
-        `<div class="cnwrap"><p class="cn">${s.cn}</p>${s.g?`<span class="gtag">${s.g}</span>`:''}</div>`;
+        `<p class="en">${gmEsc(s.en)}</p>`+
+        `<div class="cnwrap"><p class="cn">${gmEsc(s.cn)}</p>${s.g?`<span class="gtag">${gmEsc(s.g)}</span>`:''}</div>`;
       sec.appendChild(div);
     });
     art.appendChild(sec);
@@ -1262,7 +1268,7 @@ function renderPassage(p){
   const vocab=matchVocab(p.paras);
   (p.extraWords||[]).forEach(function(w){ if(!vocab.some(function(v){ return v.w.toLowerCase()===w.w.toLowerCase(); })) vocab.push(w); });
   $('#vocabCount').textContent = vocab.length?`（${vocab.length} 个）`:'';
-  $('#vocabList').innerHTML = vocab.map(v=>`<li><b>${v.w}</b><span>${v.cn}</span></li>`).join('');
+  $('#vocabList').innerHTML = vocab.map(v=>`<li><b>${gmEsc(v.w)}</b><span>${gmEsc(v.cn)}</span></li>`).join('');
   $('#vocabBox').open=false;
   applyMode();
   updateFavBtn();
@@ -1362,6 +1368,7 @@ async function wbCloudChat(msgs,timeoutMs){
   }catch(e){ AI_CTRL=null; return null; }
 }
 async function aiChat(sys,usr,timeoutMs,minLen){
+  AI_CANCEL=false;   /* 复位取消标记（上次任务取消后不污染本次，「测试连通」不再永久失败） */
   const msgs=[{role:'system',content:sys},{role:'user',content:usr}];
   const cfg=aiCfg();
   /* ① WorkBuddy 云端 AI：免密钥，优先使用 */
@@ -1496,12 +1503,15 @@ async function aiBuildCloze(){
       .map(function(o,i){ return {w:String(o.w).trim(), pos:String(o.pos||'').trim(), cn:String(o.cn||'').trim(), letter:'ABCDEFGHIJKLMNO'[i]}; })
       .filter(function(o){ return o.w.length>=2 && o.cn; });
     const answers=(j.answers||[]).map(function(x){ return String(x).trim().toLowerCase(); }).slice(0,10);
+    /* 校验：每个答案都必须存在于选项表，否则该空永远填不出（AI 幻觉防护） */
+    const optWs={}; opts.forEach(function(o){ optWs[o.w.toLowerCase()]=1; });
+    const validAnswers=answers.filter(function(w){ return optWs[w]; });
     const paras=(j.paras||[]).filter(function(p){ return p&&p.en&&p.en.length>=120; }).map(function(p){ return {en:String(p.en), cn:String(p.cn||'')}; });
-    if(opts.length<15 || answers.length!==10 || !paras.length) continue;
+    if(opts.length<15 || validAnswers.length!==10 || !paras.length) continue;
     var wc=0; paras.forEach(function(p){ wc+=p.en.replace(/__\d+__/g,' ').trim().split(/\s+/).filter(Boolean).length; });
     if(wc<MINW) continue;   /* 短文长度不达真题标准：重试一次，仍不足则回落本地引擎 */
     return {titleEn:String(j.title||'AI Cloze'), titleCn:String(j.titleCn||''),
-            paras:paras, options:opts, answers:answers, src:'ai'};
+            paras:paras, options:opts, answers:validAnswers, src:'ai'};
   }
   return null;
 }
@@ -1528,7 +1538,7 @@ function showProfile(){ stopTts(); showOnly('profile'); renderProfile(); window.
 
 /* ---------- 收藏 ---------- */
 function getFavs(){ try{ return JSON.parse(localStorage.getItem('yt_favs')||'[]'); }catch(e){ return []; } }
-function saveFavs(l){ try{ localStorage.setItem('yt_favs', JSON.stringify(l)); }catch(e){} }
+function saveFavs(l){ try{ localStorage.setItem('yt_favs', JSON.stringify(l)); }catch(e){ showToast('⚠️ 保存失败：浏览器存储空间不足，收藏未更新'); } }
 function updateFavBtn(){
   const on = !!(curPassage && curPassage.id && getFavs().some(f=>f.id===curPassage.id));
   const b=$('#favBtn');
@@ -1543,6 +1553,7 @@ $('#favBtn').onclick=()=>{
     favs.splice(i,1); saveFavs(favs);
     updateFavBtn(); updateMeBtn(); showToast('已取消收藏');
   }else{
+    if(favs.length>=200){ showToast('收藏已达上限 200 篇，请先在「我的主页」清理'); return; }
     favs.push(Object.assign({}, curPassage, {savedAt:Date.now()}));
     saveFavs(favs);
     updateFavBtn(); updateMeBtn(); showToast('已收藏 ⭐ 可在「我的主页」回看');
@@ -1585,9 +1596,9 @@ function renderProfile(){
     const ds=(d.getMonth()+1)+'月'+d.getDate()+'日';
     card.innerHTML =
       `<div class="favMain">
-        <div class="favTitle">${f.titleEn}</div>
-        <div class="favCn">${f.titleCn||''}</div>
-        <div class="favMeta"><span>${f.emoji} ${f.topicName}</span><span>${DIFF_LABEL[f.diff]||''}</span><span>约 ${f.wordCount} 词</span><span>${ds}</span></div>
+        <div class="favTitle">${gmEsc(f.titleEn)}</div>
+        <div class="favCn">${gmEsc(f.titleCn||'')}</div>
+        <div class="favMeta"><span>${gmEsc((f.emoji||'')+' '+(f.topicName||''))}</span><span>${DIFF_LABEL[f.diff]||''}</span><span>约 ${f.wordCount} 词</span><span>${ds}</span></div>
       </div>
       <button class="favStar" title="取消收藏">★</button>`;
     card.querySelector('.favStar').onclick=(ev)=>{ ev.stopPropagation(); removeFav(f.id); };
@@ -1642,8 +1653,8 @@ function renderHistory(){
     const card=document.createElement('div'); card.className='favCard';
     card.innerHTML =
       `<div class="favMain">
-        <div class="favTitle">${f.titleEn}</div>
-        <div class="favMeta"><span>🕐 ${ds}</span><span>${f.emoji} ${f.topicName}</span><span>${DIFF_LABEL[f.diff]||''}</span><span>约 ${f.wordCount} 词</span></div>
+        <div class="favTitle">${gmEsc(f.titleEn)}</div>
+        <div class="favMeta"><span>🕐 ${ds}</span><span>${gmEsc((f.emoji||'')+' '+(f.topicName||''))}</span><span>${DIFF_LABEL[f.diff]||''}</span><span>约 ${f.wordCount} 词</span></div>
       </div>
       <button class="histDel" title="删除这条记录">✕</button>`;
     card.querySelector('.histDel').onclick=(ev)=>{ ev.stopPropagation(); removeHistory(f.id); };
@@ -1659,7 +1670,7 @@ function saveWrongBook(w){ try{ localStorage.setItem('yt_wrongbook', JSON.string
 function addWrong(q){
   let wb=getWrongBook().filter(x=>!(x.type===q.type && x.body===q.body));  // 同题去重
   wb.unshift({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),
-    type:q.type, prompt:q.prompt, body:q.body, correct:q.correct||q.options[q.ans], your:q.your,
+    type:q.type, prompt:q.prompt, body:q.body, correct:q.correct||q.options[q.ans], your:q.your, yourIdx:q.yourIdx,
     options:q.options||[],       /* 记录完整选项，错题重刷需要 */
     title:(curPassage&&curPassage.titleEn)?curPassage.titleEn:(q.title||''), t:Date.now()});
   if(wb.length>100) wb=wb.slice(0,100);
@@ -1684,9 +1695,9 @@ function renderWrong(){
     const card=document.createElement('div'); card.className='favCard';
     card.innerHTML =
       `<div class="favMain">
-        <div class="favMeta" style="margin:0 0 6px;"><span>${w.type}题</span><span>🕐 ${ds}</span><span>《${(w.title||'').slice(0,30)}》</span></div>
-        <div class="wrongBody">${w.prompt}<br>${w.body||''}</div>
-        <div class="wrongAns"><span class="bad">✗ 你的答案：${w.your||'—'}</span><span class="good">✓ 正确答案：${w.correct}</span></div>
+        <div class="favMeta" style="margin:0 0 6px;"><span>${gmEsc(w.type)}题</span><span>🕐 ${ds}</span><span>《${gmEsc((w.title||'').slice(0,30))}》</span></div>
+        <div class="wrongBody">${gmEsc(w.prompt)}<br>${gmEsc(w.body||'')}</div>
+        <div class="wrongAns"><span class="bad">✗ 你的答案：${gmEsc(w.your||'—')}</span><span class="good">✓ 正确答案：${gmEsc(w.correct||'')}</span></div>
       </div>
       <button class="histDel" title="删除">✕</button>`;
     card.querySelector('.histDel').onclick=(ev)=>{ ev.stopPropagation(); removeWrong(w.id); };
@@ -1907,35 +1918,36 @@ function renderQuestion(){
   $('#qBody').textContent=q.body;
   const box=$('#qOptions'); box.innerHTML='';
   const exam=(qMode==='exam');
-  const sel=exam ? quiz.answers[quiz.idx] : q.your;
+  const sel=exam ? quiz.answers[quiz.idx] : q.yourIdx;
   q.options.forEach((opt,i)=>{
     let cls='qOpt';
     if(exam){
-      if(sel===opt) cls+=' sel';
-    } else if(q.your!=null){
+      if(sel===i) cls+=' sel';
+    } else if(q.yourIdx!=null){
       if(i===q.ans) cls+=' right';
-      else if(q.your===opt) cls+=' wrong';
+      else if(q.yourIdx===i) cls+=' wrong';
     }
     const b=document.createElement('button'); b.className=cls;
-    b.innerHTML='<b>'+'ABCD'[i]+'</b>'+opt;
+    b.innerHTML='<b>'+'ABCD'[i]+'</b>'+gmEsc(opt);
     b.onclick=()=>{
       if(!exam){
         /* 练习模式：即时判分，答后锁定 */
-        if(q.your!=null) return;
+        if(q.yourIdx!=null) return;
+        q.yourIdx=i;
         q.your=q.options[i];
-        if(q.your===q.options[q.ans]) quiz.right++; else addWrong(q);
+        if(q.yourIdx===q.ans) quiz.right++; else addWrong(q);
         renderQuestion();
         return;
       }
-      quiz.answers[quiz.idx]=opt;
-      [...box.children].forEach((x,j)=>x.classList.toggle('sel', quiz.answers[quiz.idx]===q.options[j]));
+      quiz.answers[quiz.idx]=i;
+      [...box.children].forEach((x,j)=>x.classList.toggle('sel', j===quiz.answers[quiz.idx]));
       const answered=quiz.answers.filter(a=>a!=null).length;
       $('#qSubmit').textContent='✓ 提交答案'+(answered<quiz.items.length?('（已答 '+answered+'/'+quiz.items.length+'）'):'');
     };
     box.appendChild(b);
   });
   if(!exam && q.your!=null){
-    const ok=(q.your===q.options[q.ans]);
+    const ok=(q.yourIdx===q.ans);
     const res=document.createElement('div'); res.className='qRevAns';
     res.textContent=(ok?'✅ 回答正确':'❌ 回答错误')+' ｜ 正确答案 '+'ABCD'[q.ans];
     box.appendChild(res);
@@ -1965,8 +1977,9 @@ function submitQuiz(){
   quiz.submitted=true;
   quiz.right=0;
   quiz.items.forEach((q,i)=>{
-    q.your=quiz.answers[i];
-    if(q.your===q.options[q.ans]) quiz.right++;
+    q.yourIdx=quiz.answers[i];
+    q.your=(q.yourIdx!=null)?q.options[q.yourIdx]:null;
+    if(q.yourIdx===q.ans) quiz.right++;
     else addWrong(q);
   });
   renderQuizDone();
@@ -1986,7 +1999,7 @@ function renderQuizDone(){
   /* 逐题答案详解 */
   const list=$('#qReview'); list.innerHTML='';
   quiz.items.forEach((q,i)=>{
-    const ok=(q.your===q.options[q.ans]);
+    const ok=(q.yourIdx===q.ans);
     const d=document.createElement('div'); d.className='qReviewItem';
     const head=document.createElement('div'); head.className='qRevHead';
     head.innerHTML='<span class="wTag">'+q.type+'题</span><span class="qRevNo">第 '+(i+1)+' 题</span>'+
@@ -2074,6 +2087,7 @@ function openCloze(lv){
   window.scrollTo(0,0);
 }
 async function buildClozePassage(){
+  if(AI_MODE && AI_BUSY){ showToast('有 AI 任务进行中，请稍候…'); return; }
   if(AI_MODE){
     AI_BUSY=true; aiLoadingShow('🌐 AI 生成选词填空');
     var ai=null;
@@ -2251,13 +2265,13 @@ function renderAICloze(){
   const box=document.getElementById('clozePassage'); box.innerHTML='';
   c.paras.forEach(function(pa,pi){
     const p=document.createElement('p');
-    p.innerHTML=pa.en.replace(/__(\d+)__/g, function(m,n){
+    p.innerHTML=gmEsc(pa.en).replace(/__(\d+)__/g, function(m,n){
       const k=parseInt(n,10)-1;
       if(k<0||k>=c.blanks.length) return m;
       const b=c.blanks[k];
       let inner;
-      if(c.done){ inner = b.ok? b.word : (b.user? '<s>'+b.user+'</s>' : '')+'<span class="cw">'+b.word+'</span>'; }
-      else inner = b.user? b.user : '<i>'+n+'</i>';
+      if(c.done){ inner = b.ok? gmEsc(b.word) : (b.user? '<s>'+gmEsc(b.user)+'</s>' : '')+'<span class="cw">'+gmEsc(b.word)+'</span>'; }
+      else inner = b.user? gmEsc(b.user) : '<i>'+n+'</i>';
       return '<span class="clz'+(c.done?(b.ok?' ok':' bad'):(b.user?' sel':''))+'" data-k="'+k+'">'+inner+'</span>';
     });
     if(c.done){ const t=document.createElement('span'); t.className='cnT'; t.textContent=pa.cn; p.appendChild(t); }
@@ -2505,7 +2519,8 @@ function showSpeak(){
 function getDialogSeen(){ try{ return JSON.parse(localStorage.getItem('yt_dseen')||'[]'); }catch(e){ return []; } }
 function pushDialogSeen(sig){ var s=getDialogSeen(); s.push(sig); if(s.length>40) s=s.slice(-40); try{ localStorage.setItem('yt_dseen', JSON.stringify(s)); }catch(e){} }
 async function newDialog(autoStart){
-  if(AI_MODE){
+  if(AI_MODE && AI_BUSY){ showToast('有 AI 任务进行中，直接用本地对话'); }
+  if(AI_MODE && !AI_BUSY){
     AI_BUSY=true; aiLoadingShow('🌐 AI 生成对话');
     var d=null;
     try{ d=await aiBuildDialog(); }catch(e){}
@@ -2555,8 +2570,8 @@ function renderSpeak(){
   const L=d.lines[spk.cur], g=spk.grades[spk.cur];
   $('#spCurWho').textContent=L.who;
   $('#spCurNo').textContent='第 '+(spk.cur+1)+' / '+d.lines.length+' 句';
-  let enHtml=L.en;
-  if(g){ enHtml=L.en.split(' ').map(function(w,i){ return '<span class="w-'+g.colors[i]+'">'+w+'</span>'; }).join(' '); }
+  let enHtml=gmEsc(L.en);
+  if(g){ enHtml=gmEsc(L.en).split(' ').map(function(w,i){ return '<span class="w-'+g.colors[i]+'">'+w+'</span>'; }).join(' '); }
   $('#spCurEn').innerHTML=enHtml;
   $('#spCurCn').textContent=L.cn;
   let bar=0, timeTxt='—';
@@ -2567,11 +2582,11 @@ function renderSpeak(){
   const box=$('#spDialog'); box.innerHTML='';
   d.lines.forEach(function(L2,li){
     const g2=spk.grades[li];
-    let en2=L2.en;
-    if(g2){ en2=L2.en.split(' ').map(function(w,i){ return '<span class="w-'+g2.colors[i]+'">'+w+'</span>'; }).join(' '); }
+    let en2=gmEsc(L2.en);
+    if(g2){ en2=gmEsc(L2.en).split(' ').map(function(w,i){ return '<span class="w-'+g2.colors[i]+'">'+w+'</span>'; }).join(' '); }
     const div=document.createElement('div');
     div.className='dl'+(li===spk.cur&&spk.listening?' cur':'')+(g2?' done':'');
-    div.innerHTML='<span class="who">'+L2.who+'</span><p class="en">'+en2+'</p><p class="cn">'+L2.cn+'</p>'+
+    div.innerHTML='<span class="who">'+gmEsc(L2.who)+'</span><p class="en">'+en2+'</p><p class="cn">'+gmEsc(L2.cn)+'</p>'+
       (g2?'<span class="dlpct '+pctCls(g2.pct)+'">'+g2.pct+'%</span>':'')+
       (li===spk.cur&&spk.listening?'<span class="dlcur">🎙 朗读中</span>':'');
     div.onclick=function(){ jumpLine(li); };
@@ -2730,13 +2745,13 @@ function finishSpeak(){
   d.lines.forEach(function(L,li){
     const g2=spk.grades[li];
     const cls=g2?pctCls(g2.pct):'r';
-    rows+='<div class="spLine"><span class="t">'+L.who+'：'+L.en+'</span><span class="p '+cls+'">'+(g2?g2.pct+'%':'未读')+'</span></div>';
+    rows+='<div class="spLine"><span class="t">'+gmEsc(L.who)+'：'+gmEsc(L.en)+'</span><span class="p '+cls+'">'+(g2?g2.pct+'%':'未读')+'</span></div>';
   });
   const box=document.getElementById('spResult');
   box.innerHTML=
     '<div class="spScore"><b>'+avg+'</b><small>综合得分 · '+grade[0]+'（已读 '+ks.length+'/'+d.lines.length+' 句）</small></div>'+
     rows+
-    '<p style="font-size:12px;color:var(--muted);margin:10px 0 0;">识别文本：'+(spk.heardAll||'（未识别到语音）').slice(0,220)+'</p>'+
+    '<p style="font-size:12px;color:var(--muted);margin:10px 0 0;">识别文本：'+gmEsc((spk.heardAll||'（未识别到语音）').slice(0,220))+'</p>'+
     recHtml;
   box.style.display='block';
   window.scrollTo(0,0);
@@ -2762,16 +2777,24 @@ $('#spAgain').onclick=function(){
   renderSpeak(); startLine(0);
 };
 $('#spBack').onclick=function(){ finishSpeakSilent(); showHome(); };
-$('#spNewX')&&0;
 function finishSpeakSilent(){
   spk.state='idle'; spk.listening=false; spk.paused=false;
   if(spk.tick) clearInterval(spk.tick);
   if(spk.autoT) clearTimeout(spk.autoT);
   recogStop();
   if(spk.stream){ try{ spk.stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} }
+  spk.stream=null;   /* 停止后置空，结束音量计 rAF 循环 */
 }
-$('#spAgain').onclick=function(){ spk.grades={}; spk.heardAll=''; spk.state='practice'; renderSpeak(); startLine(0); };
 
+/* 顺序对齐：目标词序列 T 与识别词序列 R 按出现顺序贪心匹配，返回逐词命中 */
+function alignWords(T,R){
+  const hit=new Array(T.length).fill(false);
+  let j=0, matched=0;
+  for(let i=0;i<T.length && j<R.length;i++){
+    if(T[i]===R[j]){ hit[i]=true; matched++; j++; }
+  }
+  return {hit:hit, matched:matched};
+}
 
 function scoreSpeak(seconds,recUrl){
   const d=spk.dialog;
@@ -2793,7 +2816,7 @@ function scoreSpeak(seconds,recUrl){
   let rows='';
   lineStat.forEach(function(L){
     const cls=L.pct>=85?'g':(L.pct>=60?'y':'r');
-    rows+='<div class="spLine"><span class="t">'+L.who+'：'+L.en+'</span><span class="p '+cls+'">'+L.pct+'%</span></div>';
+    rows+='<div class="spLine"><span class="t">'+gmEsc(L.who)+'：'+gmEsc(L.en)+'</span><span class="p '+cls+'">'+L.pct+'%</span></div>';
   });
   box.innerHTML=
     '<div class="spScore"><b>'+total+'</b><small>综合得分 · '+grade[0]+'（准确 '+Math.round(acc*100)+'% · 完整 '+Math.round(comp*100)+'% · 流利 '+Math.round(flu*100)+'%）</small></div>'+
@@ -2827,15 +2850,23 @@ function markWord(w,s){
 }
 /* 组词策略：标记「不认识」的词进入复习队列，优先重考（最多4个/组），
    其余名额抽新词；全部标完认识后该词退出队列 */
+let WB_IDX=null;
+function wordIndex(){   /* 词→行 一次性索引：已标词成百上千时避免逐词全表 find */
+  if(WB_IDX) return WB_IDX;
+  WB_IDX={};
+  WORD_BANK.forEach(function(e){ WB_IDX[e[0]]=e; });
+  return WB_IDX;
+}
 function pickGroup(){
   const st=getWordState();
   const picked=new Set(), group=[];
-  const inFilter=(w)=>{ const e=WORD_BANK.find(x=>x[0]===w); return e ? wordMatchesFilter(e) : wordFilter==='all'; };
+  const idx=wordIndex();
+  const inFilter=(w)=>{ const e=idx[w]; return e ? wordMatchesFilter(e) : wordFilter==='all'; };
   const review=Object.entries(st)
     .filter(([,v])=>v.s==='u').sort((a,b)=>a[1].t-b[1].t)
     .map(([w])=>w).filter(inFilter);
   review.slice(0,4).forEach(w=>{
-    const e=WORD_BANK.find(x=>x[0]===w);
+    const e=idx[w];
     if(e){ group.push(e); picked.add(w); }
   });
   const fresh=WORD_BANK.filter(function(e){ return !st[e[0]] && !picked.has(e[0]) && wordMatchesFilter(e); });
@@ -3231,7 +3262,7 @@ function pwaGuideFallback(){
   /* 安卓自带浏览器等：直接下载 APK，浏览器会进入「我的下载」 */
   try{
     var a=document.createElement('a');
-    a.href='./kaoyan-reading.apk';
+    a.href='https://github.com/cxjcom/yantu-reading/releases/download/v1.0/kaoyan-reading.apk';
     a.download='kaoyan-reading.apk';
     document.body.appendChild(a);
     a.click();
@@ -3318,6 +3349,8 @@ function setLRLevel(lv){
   lrGenerate();
 }
 async function lrGenerate(){
+  if(AI_BUSY){ showToast('有 AI 任务进行中，请稍候…'); return; }
+  AI_BUSY=true;   /* 此前漏设：秒数计时与重复进入防护都依赖它 */
   aiLoadingShow('🌐 AI 生成长篇阅读');
   var ai=null;
   try{ ai=await aiBuildLongRead(); }catch(e){}
