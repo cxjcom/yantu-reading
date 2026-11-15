@@ -1521,7 +1521,7 @@ async function aiBuildDialog(){
   if(lines.length<10 || words<140) return null;
   return {icon:'🤖', name:String(j.scene||'AI 对话'), lines:lines, src:'ai'};
 }
-function showOnly(id){ ['home','reader','profile','words','quiz','cloze','speak','longread'].forEach(s=>{ $('#'+s).style.display = (s===id)?'block':'none'; }); }
+function showOnly(id){ ['home','reader','profile','words','quiz','cloze','speak','longread','games'].forEach(s=>{ $('#'+s).style.display = (s===id)?'block':'none'; }); }
 function showReader(){ showOnly('reader'); }
 function showHome(){ stopTts(); showOnly('home'); updateMeBtn(); window.scrollTo(0,0); }
 function showProfile(){ stopTts(); showOnly('profile'); renderProfile(); window.scrollTo(0,0); }
@@ -3453,3 +3453,614 @@ function audioCtx(){
   if(AC.state==="suspended"){ try{AC.resume();}catch(e){} }
   return AC;
 }
+
+/* ===== 开屏动画「朱砂落墨」：移除节点 + 交互跳过 =====
+   CSS 已保证动画结束后自行隐藏（fill-forwards），这里只做清理与跳过 */
+(function(){
+  var sp=document.getElementById('splash');
+  if(!sp) return;
+  if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches){ sp.remove(); return; }
+  var done=false;
+  function end(){ if(done) return; done=true; if(sp.parentNode) sp.parentNode.removeChild(sp); }
+  function skip(){ if(done) return; done=true; sp.classList.add('spSkip'); setTimeout(end, 420); }
+  sp.addEventListener('animationend', function(ev){ if(ev.animationName==='spExit') end(); });
+  sp.addEventListener('click', skip);
+  ['keydown','wheel','touchstart'].forEach(function(t){
+    window.addEventListener(t, skip, {passive:true, once:true});
+  });
+  setTimeout(end, 4200); /* 兜底：动画被系统省电策略停住也能移除 */
+})();
+
+/* =====================================================
+   游戏角：🃏 词牌消消乐 / 🔤 拼词方块 / ⚡ 词力快答 / 🎯 字母救援
+   词源：WORD_BANK（ensureWordBank 懒加载）按级别过滤；
+   最佳成绩存 yt_games；不写背词标记、不计阅读统计
+   ===================================================== */
+let gmLevel='kaoyan';
+try{ gmLevel=localStorage.getItem('yt_gamelevel')||'kaoyan'; }catch(e){}
+let gmCur='match';
+let gmPoolCache=null, gmPoolLevel='';
+/* 消消乐 */
+let mtPairs=null, mtOpen=[], mtMoves=0, mtFound=0, mtLock=false, mtT0=0, mtTimer=null;
+/* 拼词 */
+let splWords=null, splIdx=0, splScore=0, splCur=null, splAns=[], splWrong=0, splHints=0, splHintPos=[], splLock=false;
+/* 快答 */
+let ruScore=0, ruCombo=0, ruMaxCombo=0, ruRight=0, ruTotal=0, ruLeft=60, ruTimer=null, ruLock=false, ruCur=null;
+let ruPoolCache=null, ruPoolLevel='';
+/* 救援 */
+let hgWords=null, hgIdx=0, hgScore=0, hgCur=null, hgGuessed=null, hgLives=6, hgSolved=0, hgDone=false;
+
+function gmEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function gmPool(){
+  if(gmPoolCache && gmPoolLevel===gmLevel) return gmPoolCache;
+  gmPoolCache=WORD_BANK.filter(wordMatchesFilter);
+  gmPoolLevel=gmLevel;
+  return gmPoolCache;
+}
+/* 按约束取词，不足时用宽松约束兜底 */
+function gmPick(n, ok, okLoose){
+  const pool=gmPool();
+  let out=pickN(pool.filter(ok), n);
+  if(out.length<n && okLoose) out=pickN(pool.filter(okLoose), n);
+  return out.slice(0,n);
+}
+/* 游戏内独立发音：不触碰背词场景的 #wSpeak 状态 */
+function gmSpeak(word){
+  try{
+    if(!TTS_OK) return;
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(word);
+    if(VOICE) u.voice=VOICE;
+    u.lang='en-US'; u.rate=Math.max(0.5, 0.8*ttsRate);
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+function gmGamesBest(){
+  try{ return JSON.parse(localStorage.getItem('yt_games')||'{}'); }catch(e){ return {}; }
+}
+function gmSaveBest(b){ try{ localStorage.setItem('yt_games', JSON.stringify(b)); }catch(e){} }
+function gmBestText(){
+  const b=gmGamesBest(), parts=[];
+  if(b.match){ if(b.match.moves) parts.push('消消乐 '+b.match.moves+'步/'+b.match.time+'s'); }
+  if(b.spell && b.spell.score) parts.push('拼词 '+b.spell.score+'分');
+  if(b.rush && b.rush.score) parts.push('快答 '+b.rush.score+'分');
+  if(b.hang && b.hang.score) parts.push('救援 '+b.hang.score+'分');
+  return parts.length? '🏆 '+parts.join(' · ') : '🏆 暂无纪录';
+}
+function gmStopAll(){
+  if(ruTimer){ clearInterval(ruTimer); ruTimer=null; }
+  if(mtTimer){ clearInterval(mtTimer); mtTimer=null; }
+}
+function gmSyncSegs(){
+  [...$('#gmLevelSeg').children].forEach(b=>b.classList.toggle('on', b.dataset.v===gmLevel));
+  [...$('#gameSeg').children].forEach(b=>b.classList.toggle('on', b.dataset.v===gmCur));
+}
+function renderGm(){
+  $('#gmBest').textContent=gmBestText();
+  $('#gmStats').textContent='';
+  if(gmCur==='match') gmMatchReady();
+  else if(gmCur==='spell') gmSpellReady();
+  else if(gmCur==='rush') gmRushReady();
+  else gmHangReady();
+}
+async function showGames(){
+  stopTts(); gmStopAll();
+  showOnly('games');
+  try{ await ensureWordBank(); }catch(e){ showToast('词库加载失败，请检查网络后重试'); return; }
+  gmSyncSegs();
+  renderGm();
+  window.scrollTo(0,0);
+}
+
+/* ---------- 🃏 词牌消消乐 ---------- */
+function gmMatchReady(){
+  $('#gmCount').textContent='';
+  $('#gmStage').innerHTML=
+    '<div class="wCard"><div class="wDone">🃏 词牌消消乐</div>'+
+    '<p class="deskTip" style="margin:14px 0 18px;">翻开两张牌，配对「英文词 ↔ 中文释义」。<br>8 对词牌，计步数与用时，挑战最少步数！</p>'+
+    '<div class="wBtns"><button class="wBtn reveal" id="gmMtStart">研墨开局 ⟶</button></div></div>';
+  $('#gmMtStart').onclick=gmMatchStart;
+}
+function gmMatchStart(){
+  const words=gmPick(8,
+    r=>{ const w=r[0], cn=r[2]||''; return w.length<=12 && cn.length<=16 && w.indexOf(' ')<0; },
+    r=>{ const w=r[0], cn=r[2]||''; return w.length<=16 && cn.length<=26 && w.indexOf(' ')<0; });
+  if(words.length<8){ showToast('词库还在研墨中，稍候再试'); return; }
+  mtPairs=words.map(r=>({w:r[0], cn:(r[2]||'').trim(), ipa:r[1]||''}));
+  mtOpen=[]; mtMoves=0; mtFound=0; mtLock=false; mtT0=0;
+  const cards=[];
+  mtPairs.forEach((p,i)=>{ cards.push({pair:i, kind:'w', text:p.w}); cards.push({pair:i, kind:'c', text:p.cn}); });
+  shuffle(cards);
+  let html='<div class="gmHud"><span>步数 <b id="gmMtMoves">0</b></span><span>用时 <b id="gmMtTime">0s</b></span><span>配对 <b id="gmMtFound">0</b> / 8</span></div><div class="gmBoard" id="gmMtBoard">';
+  cards.forEach((c,i)=>{
+    html+='<button class="gmCard" data-i="'+i+'" data-pair="'+c.pair+'" data-kind="'+c.kind+'" aria-label="词牌">'+
+      '<span class="gmInner"><span class="gmFace gmBack2">文</span><span class="gmFace gmFront">'+gmEsc(c.text)+'</span></span></button>';
+  });
+  html+='</div>';
+  $('#gmStage').innerHTML=html;
+  $('#gmStats').textContent='点两张牌配对；配错会自动翻回';
+  $('#gmCount').textContent='0 / 8';
+  $('#gmMtBoard').addEventListener('click', mtClick);
+}
+function mtClick(ev){
+  const el=ev.target.closest('.gmCard');
+  if(!el || mtLock || el.classList.contains('flip') || el.classList.contains('ok')) return;
+  if(!mtT0){
+    mtT0=Date.now();
+    mtTimer=setInterval(function(){
+      const t=$('#gmMtTime');
+      if(t) t.textContent=Math.round((Date.now()-mtT0)/1000)+'s';
+    },500);
+  }
+  el.classList.add('flip');
+  mtOpen.push(el);
+  if(mtOpen.length<2) return;
+  mtMoves++;
+  const mv=$('#gmMtMoves'); if(mv) mv.textContent=mtMoves;
+  const a=mtOpen[0], b=mtOpen[1]; mtOpen=[];
+  if(a.dataset.pair===b.dataset.pair && a.dataset.kind!==b.dataset.kind){
+    mtLock=true;
+    setTimeout(function(){
+      a.classList.add('ok'); b.classList.add('ok');
+      a.disabled=true; b.disabled=true;
+      mtFound++; mtLock=false;
+      const f=$('#gmMtFound'); if(f) f.textContent=mtFound;
+      $('#gmCount').textContent=mtFound+' / 8';
+      if(mtFound===8) mtWin();
+    },380);
+  }else{
+    mtLock=true;
+    b.classList.add('bad');
+    setTimeout(function(){
+      a.classList.remove('flip','bad'); b.classList.remove('flip','bad');
+      mtLock=false;
+    },720);
+  }
+}
+function mtWin(){
+  gmStopAll();
+  const secs=Math.round((Date.now()-mtT0)/1000);
+  const b=gmGamesBest(), mb=b.match||{}, rec=[];
+  if(!mb.moves || mtMoves<mb.moves){ mb.moves=mtMoves; rec.push('最少步数'); }
+  if(!mb.time || secs<mb.time){ mb.time=secs; rec.push('最快用时'); }
+  if(rec.length){ b.match=mb; gmSaveBest(b); $('#gmBest').textContent=gmBestText(); }
+  const recap=mtPairs.map(p=>'<li><b>'+gmEsc(p.w)+'</b><i>/'+gmEsc(p.ipa)+'/</i><span>'+gmEsc(p.cn)+'</span></li>').join('');
+  $('#gmStage').innerHTML=
+    '<div class="wCard"><div class="wDone">🎉 全部配对！</div>'+
+    '<div class="wDoneSub">用时 '+secs+' 秒 · '+mtMoves+' 步'+(rec.length?(' · 🏆 新纪录（'+rec.join('、')+'）'):'')+'</div>'+
+    '<div class="inkLabel">本局词牌复盘</div><ul class="gmRecap">'+recap+'</ul>'+
+    '<div class="wBtns"><button class="wBtn again" id="gmMtAgain">🔁 再来一局</button></div></div>';
+  $('#gmStats').textContent=''; $('#gmCount').textContent='';
+  $('#gmMtAgain').onclick=gmMatchStart;
+  showToast(rec.length? '🏆 新纪录！':'太棒了，再来一局？');
+}
+
+/* ---------- 🔤 拼词方块 ---------- */
+function gmSpellReady(){
+  $('#gmCount').textContent='';
+  const b=gmGamesBest();
+  $('#gmStage').innerHTML=
+    '<div class="wCard"><div class="wDone">🔤 拼词方块</div>'+
+    '<p class="deskTip" style="margin:14px 0 18px;">看中文释义、听发音，用乱序字母块拼出单词。10 词一轮。<br>「提示」补一个字母 -2 分；整词拼错重来 -1 分。</p>'+
+    (b.spell&&b.spell.score?('<p class="gmBest2">🏆 最高分 '+b.spell.score+'</p>'):'')+
+    '<div class="wBtns"><button class="wBtn reveal" id="gmSpStart">提笔开拼 ⟶</button></div></div>';
+  $('#gmSpStart').onclick=gmSpellStart;
+}
+function gmSpellStart(){
+  splWords=gmPick(10,
+    r=>{ const w=r[0]; return w.length>=4 && w.length<=12 && /^[a-z]+$/.test(w) && (r[2]||'').length>0; },
+    r=>{ const w=r[0]; return w.length>=3 && w.length<=14 && /^[a-z]+$/.test(w) && (r[2]||'').length>0; });
+  if(splWords.length<10){ showToast('词库还在研墨中，稍候再试'); return; }
+  splIdx=0; splScore=0;
+  gmSpellWord();
+}
+function gmSpellWord(){
+  if(splIdx>=10){ gmSpellEnd(); return; }
+  const r=splWords[splIdx];
+  splCur={w:r[0], ipa:r[1]||'', cn:(r[2]||'').trim(), ex:r[3]||'', exc:r[4]||''};
+  splAns=new Array(splCur.w.length).fill(null);
+  splWrong=0; splHints=0; splHintPos=[]; splLock=false;
+  const letters=shuffle(splCur.w.split(''));
+  let tiles='';
+  letters.forEach((ch,i)=>{ tiles+='<button class="gmTile" data-ch="'+ch+'" data-ti="'+i+'">'+ch.toUpperCase()+'</button>'; });
+  let slots='';
+  splCur.w.split('').forEach((_,i)=>{ slots+='<button class="gmSlot" data-si="'+i+'">_</button>'; });
+  $('#gmStage').innerHTML=
+    '<div class="gmHud"><span>进度 <b>'+(splIdx+1)+' / 10</b></span><span>得分 <b id="gmSpScore">'+splScore+'</b></span></div>'+
+    '<div class="wCard" style="padding:22px 16px 26px; position:relative;">'+
+      '<button class="inkBtn wSpeak" id="gmSpHear" title="听发音">🔊</button>'+
+      '<div class="gmHint2">'+gmEsc(splCur.cn)+'</div>'+
+      '<div class="wIpaRow"><span class="wIpa">/'+gmEsc(splCur.ipa)+'/</span></div>'+
+      '<div class="gmSlots" id="gmSpSlots">'+slots+'</div>'+
+      '<div class="gmTiles" id="gmSpTiles">'+tiles+'</div>'+
+      '<div class="gmOps"><button class="inkBtn" id="gmSpHint">💡 提示 -2</button><span class="gmWarn" id="gmSpMsg"></span></div>'+
+      '<div class="gmDetail" id="gmSpDetail"></div>'+
+    '</div>'+
+    '<div class="wBtns" id="gmSpNextRow" style="display:none"><button class="wBtn reveal" id="gmSpNext">下一题 ⟶</button></div>';
+  $('#gmStats').textContent='点字母块填入 → 点已填槽位取回';
+  $('#gmCount').textContent='第 '+(splIdx+1)+' 词';
+  $('#gmSpTiles').addEventListener('click', splTileClick);
+  $('#gmSpSlots').addEventListener('click', splSlotClick);
+  $('#gmSpHint').onclick=splHint;
+  $('#gmSpHear').onclick=function(){ gmSpeak(splCur.w); };
+  $('#gmSpNext').onclick=function(){ splLock=false; splIdx++; gmSpellWord(); };
+  setTimeout(function(){ gmSpeak(splCur.w); },250);
+}
+function splTileClick(ev){
+  const t=ev.target.closest('.gmTile');
+  if(!t || splLock || t.classList.contains('used')) return;
+  const si=splAns.indexOf(null);
+  if(si<0) return;
+  splAns[si]={ch:t.dataset.ch, ti:+t.dataset.ti};
+  t.classList.add('used');
+  const slot=$('#gmSpSlots').children[si];
+  slot.textContent=t.dataset.ch.toUpperCase();
+  slot.classList.add('filled');
+  $('#gmSpMsg').textContent='';
+  if(splAns.every(x=>x)) splJudge();
+}
+function splSlotClick(ev){
+  const s=ev.target.closest('.gmSlot');
+  if(!s || splLock || !s.classList.contains('filled') || s.classList.contains('hinted')) return;
+  const si=[...$('#gmSpSlots').children].indexOf(s);
+  const v=splAns[si];
+  if(!v) return;
+  splAns[si]=null;
+  s.textContent='_'; s.classList.remove('filled');
+  const tile=$('#gmSpTiles').querySelector('.gmTile[data-ti="'+v.ti+'"]');
+  if(tile) tile.classList.remove('used');
+}
+function splJudge(){
+  const word=splAns.map(x=>x.ch).join('');
+  if(word===splCur.w){ splRight(); return; }
+  splWrong++;
+  splScore=Math.max(0, splScore-1);
+  const sc=$('#gmSpScore'); if(sc) sc.textContent=splScore;
+  $('#gmSpMsg').textContent='拼错了，再试试（-1 分）';
+  const sl=$('#gmSpSlots');
+  sl.classList.add('gmShake');
+  setTimeout(function(){ sl.classList.remove('gmShake'); splReset(); },480);
+}
+/* 拼错重来：保留已提示的字母，清掉普通字母 */
+function splReset(){
+  const keep={};
+  splHintPos.forEach(function(i){ keep[i]=splCur.w[i]; });
+  splAns=new Array(splCur.w.length).fill(null);
+  [...$('#gmSpTiles').querySelectorAll('.gmTile')].forEach(t=>t.classList.remove('used'));
+  [...$('#gmSpSlots').children].forEach(function(s,i){
+    if(keep[i]!==undefined){
+      splAns[i]={ch:keep[i], ti:-1};
+      s.textContent=keep[i].toUpperCase();
+      s.classList.add('filled','hinted');
+      const t=[...$('#gmSpTiles').querySelectorAll('.gmTile')].find(x=>x.dataset.ch===keep[i] && !x.classList.contains('used'));
+      if(t) t.classList.add('used');
+    }else{
+      s.textContent='_'; s.classList.remove('filled','hinted');
+    }
+  });
+}
+function splHint(){
+  if(splLock) return;
+  let si=-1;
+  for(let i=0;i<splAns.length;i++){
+    if(!splAns[i] || splAns[i].ch!==splCur.w[i]){ si=i; break; }
+  }
+  if(si<0) return;
+  const need=splCur.w[si];
+  /* 该字母若已占用在别的槽位，先取回 */
+  for(let i=0;i<splAns.length;i++){
+    if(splAns[i] && splAns[i].ch===need && i!==si && !splHintPos.includes(i)){
+      const tile=$('#gmSpTiles').querySelector('.gmTile[data-ti="'+splAns[i].ti+'"]');
+      if(tile) tile.classList.remove('used');
+      splAns[i]=null;
+      const s=$('#gmSpSlots').children[i];
+      s.textContent='_'; s.classList.remove('filled');
+    }
+  }
+  const tile=[...$('#gmSpTiles').querySelectorAll('.gmTile')].find(x=>x.dataset.ch===need && !x.classList.contains('used'));
+  if(tile) tile.classList.add('used');
+  splAns[si]={ch:need, ti:tile? +tile.dataset.ti : -1};
+  const slot=$('#gmSpSlots').children[si];
+  slot.textContent=need.toUpperCase();
+  slot.classList.add('filled','hinted');
+  if(!splHintPos.includes(si)) splHintPos.push(si);
+  splHints++;
+  splScore=Math.max(0, splScore-2);
+  const sc=$('#gmSpScore'); if(sc) sc.textContent=splScore;
+  if(splAns.every(x=>x)) splJudge();
+}
+function splRight(){
+  splLock=true;
+  const pts=Math.max(4, 10 - splHints*2 - splWrong);
+  splScore+=pts;
+  const sc=$('#gmSpScore'); if(sc) sc.textContent=splScore;
+  $('#gmSpSlots').classList.add('gmWin');
+  $('#gmSpMsg').textContent='';
+  $('#gmSpTiles').querySelectorAll('.gmTile').forEach(t=>t.classList.add('used'));
+  const det=$('#gmSpDetail');
+  det.innerHTML='<b>'+gmEsc(splCur.w)+'</b><i>/'+gmEsc(splCur.ipa)+'/</i><span class="pt">+ '+pts+' 分</span>'+
+    '<p>'+gmEsc(splCur.cn)+'</p>'+
+    (splCur.ex?('<p class="ex">'+gmEsc(splCur.ex)+(splCur.exc?('<br>'+gmEsc(splCur.exc)):'')+'</p>'):'');
+  det.classList.add('shown');
+  const row=$('#gmSpNextRow'); row.style.display='flex';
+  $('#gmCount').textContent='第 '+(splIdx+1)+' 词 ✓';
+  $('#gmStats').textContent='';
+  showToast('拼对了 +'+pts+' 分');
+}
+function gmSpellEnd(){
+  const b=gmGamesBest(), sb=b.spell||{};
+  const rec=!sb.score || splScore>sb.score;
+  sb.score=Math.max(sb.score||0, splScore);
+  b.spell=sb; gmSaveBest(b);
+  $('#gmBest').textContent=gmBestText();
+  $('#gmStage').innerHTML=
+    '<div class="wCard"><div class="wDone">🎉 本轮完成</div>'+
+    '<div class="wDoneSub">得分 '+splScore+' · 拼对 10 词'+(rec?' · 🏆 新纪录':'')+'</div>'+
+    '<div class="wBtns"><button class="wBtn again" id="gmSpAgain">🔁 再来一轮</button></div></div>';
+  $('#gmCount').textContent=''; $('#gmStats').textContent='';
+  $('#gmSpAgain').onclick=gmSpellStart;
+  if(rec) showToast('🏆 新纪录：'+splScore+' 分');
+}
+
+/* ---------- ⚡ 词力快答 ---------- */
+function gmRushPool(){
+  if(ruPoolCache && ruPoolLevel===gmLevel) return ruPoolCache;
+  ruPoolCache=gmPool().filter(r=>(r[2]||'').length>=2);
+  ruPoolLevel=gmLevel;
+  return ruPoolCache;
+}
+function gmRushReady(){
+  $('#gmCount').textContent='';
+  gmStopAll();
+  const b=gmGamesBest();
+  $('#gmStage').innerHTML=
+    '<div class="wCard"><div class="wDone">⚡ 词力快答</div>'+
+    '<p class="deskTip" style="margin:14px 0 18px;">60 秒限时抢答：看词选释义 / 看释义选词。<br>连击越高加成越多（最高 ×5），答错连击清零。</p>'+
+    (b.rush&&b.rush.score?('<p class="gmBest2">🏆 最高分 '+b.rush.score+(b.rush.combo?(' · 最大连击 ×'+b.rush.combo):'')+'</p>'):'')+
+    '<div class="wBtns"><button class="wBtn reveal" id="gmRuStart">开始抢答 ⟶</button></div></div>';
+  $('#gmRuStart').onclick=gmRushStart;
+}
+function gmRushStart(){
+  ruScore=0; ruCombo=0; ruMaxCombo=0; ruRight=0; ruTotal=0; ruLeft=60; ruLock=false;
+  $('#gmStage').innerHTML=
+    '<div class="gmHud"><span>得分 <b id="gmRuScore">0</b></span><span class="gmCombo" id="gmRuCombo"></span><span>答对 <b id="gmRuRight">0</b></span></div>'+
+    '<div class="wBarWrap" style="margin:0 2px 14px;"><div id="gmRuTimeBar"></div></div>'+
+    '<div class="wCard" style="padding:22px 16px 26px; min-height:250px;" id="gmRuCard"></div>';
+  $('#gmStats').textContent='手要快，心要稳！';
+  $('#gmCount').textContent='60s';
+  ruTimer=setInterval(function(){
+    ruLeft-=0.1;
+    const bar=$('#gmRuTimeBar');
+    if(bar) bar.style.width=Math.max(0, ruLeft/60*100)+'%';
+    const c=$('#gmCount');
+    if(c) c.textContent=Math.max(0, Math.ceil(ruLeft))+'s';
+    if(ruLeft<=0) gmRushEnd();
+  },100);
+  gmRushQ();
+}
+function gmRushDs(P, target, key){
+  const tv=key(target), used={}, out=[];
+  used[tv]=1;
+  for(let guard=0; guard<200 && out.length<3; guard++){
+    const c=pick(P), v=key(c);
+    if(used[v]) continue;
+    used[v]=1; out.push(c);
+  }
+  return out;
+}
+function gmRushQ(){
+  if(ruLeft<=0) return;
+  const P=gmRushPool();
+  const target=pick(P);
+  const toCn=Math.random()<0.6;
+  let opts;
+  if(toCn){
+    const ds=gmRushDs(P, target, x=>x[2]);
+    opts=shuffle([{t:target[2], ok:true}].concat(ds.map(d=>({t:d[2], ok:false}))));
+  }else{
+    const ds=gmRushDs(P, target, x=>x[0]);
+    opts=shuffle([{t:target[0], ok:true}].concat(ds.map(d=>({t:d[0], ok:false}))));
+  }
+  ruCur={opts:opts, ans:opts.findIndex(o=>o.ok)};
+  ruTotal++;
+  let html='<div class="gmPrompt">'+gmEsc(target[0])+'</div><div class="gmOpts">';
+  if(!toCn) html='<div class="gmPrompt gmPromptCn">'+gmEsc(target[2])+'</div><div class="gmOpts">';
+  opts.forEach((o,i)=>{ html+='<button class="qOpt" data-oi="'+i+'"><b>'+String.fromCharCode(65+i)+'.</b> '+gmEsc(o.t)+'</button>'; });
+  html+='</div>';
+  $('#gmRuCard').innerHTML=html;
+  $('#gmRuCard').querySelector('.gmOpts').addEventListener('click', ruAns);
+}
+function ruAns(ev){
+  const b=ev.target.closest('.qOpt');
+  if(!b || ruLock || ruLeft<=0) return;
+  ruLock=true;
+  const oi=+b.dataset.oi;
+  if(oi===ruCur.ans){
+    ruCombo++; ruMaxCombo=Math.max(ruMaxCombo, ruCombo);
+    const pts=10+Math.min(ruCombo,5)*2;
+    ruScore+=pts; ruRight++;
+    b.classList.add('right');
+    const sc=$('#gmRuScore'); if(sc) sc.textContent=ruScore;
+    const cb=$('#gmRuCombo'); if(cb) cb.textContent=ruCombo>=2?('🔥 ×'+ruCombo):'';
+    const rr=$('#gmRuRight'); if(rr) rr.textContent=ruRight;
+    setTimeout(function(){ ruLock=false; gmRushQ(); },230);
+  }else{
+    ruCombo=0;
+    b.classList.add('wrong');
+    const cb=$('#gmRuCombo'); if(cb) cb.textContent='';
+    const right=$('#gmRuCard').querySelector('.qOpt[data-oi="'+ruCur.ans+'"]');
+    if(right) right.classList.add('right');
+    setTimeout(function(){ ruLock=false; gmRushQ(); },680);
+  }
+}
+function gmRushEnd(){
+  gmStopAll();
+  const acc=ruTotal? Math.round(ruRight/ruTotal*100) : 0;
+  const b=gmGamesBest(), rb=b.rush||{};
+  const rec=!rb.score || ruScore>rb.score;
+  rb.score=Math.max(rb.score||0, ruScore);
+  rb.combo=Math.max(rb.combo||0, ruMaxCombo);
+  b.rush=rb; gmSaveBest(b);
+  $('#gmBest').textContent=gmBestText();
+  $('#gmStage').innerHTML=
+    '<div class="wCard"><div class="wDone">⏰ 时间到！</div>'+
+    '<div class="wDoneSub">得分 '+ruScore+' · 答对 '+ruRight+'/'+ruTotal+'（'+acc+'%）· 最大连击 ×'+ruMaxCombo+(rec?' · 🏆 新纪录':'')+'</div>'+
+    '<div class="wBtns"><button class="wBtn again" id="gmRuAgain">🔁 再来一次</button></div></div>';
+  $('#gmStats').textContent=''; $('#gmCount').textContent='';
+  $('#gmRuAgain').onclick=gmRushStart;
+  if(rec) showToast('🏆 新纪录：'+ruScore+' 分');
+}
+
+/* ---------- 🎯 字母救援 ---------- */
+function gmHangReady(){
+  $('#gmCount').textContent='';
+  const b=gmGamesBest();
+  $('#gmStage').innerHTML=
+    '<div class="wCard"><div class="wDone">🎯 字母救援</div>'+
+    '<p class="deskTip" style="margin:14px 0 18px;">根据释义与音标，把单词从墨困中救出来。5 词一轮，每词 6 次机会。<br>屏幕键盘或直接敲电脑键盘均可；剩余机会越多，得分越高。</p>'+
+    (b.hang&&b.hang.score?('<p class="gmBest2">🏆 最高分 '+b.hang.score+'</p>'):'')+
+    '<div class="wBtns"><button class="wBtn reveal" id="gmHgStart">开始救援 ⟶</button></div></div>';
+  $('#gmHgStart').onclick=gmHangStart;
+}
+function gmHangStart(){
+  hgWords=gmPick(5,
+    r=>{ const w=r[0]; return w.length>=4 && w.length<=10 && /^[a-z]+$/.test(w) && (r[2]||'').length>0; },
+    r=>{ const w=r[0]; return w.length>=3 && w.length<=12 && /^[a-z]+$/.test(w) && (r[2]||'').length>0; });
+  if(hgWords.length<5){ showToast('词库还在研墨中，稍候再试'); return; }
+  hgIdx=0; hgScore=0; hgSolved=0;
+  gmHangWord();
+}
+function gmHangWord(){
+  if(hgIdx>=5){ gmHangEnd(); return; }
+  const r=hgWords[hgIdx];
+  hgCur={w:r[0], ipa:r[1]||'', cn:(r[2]||'').trim()};
+  hgGuessed={}; hgLives=6; hgDone=false;
+  $('#gmStage').innerHTML=
+    '<div class="gmHud"><span>第 <b>'+(hgIdx+1)+'</b> / 5 词</span><span>得分 <b id="gmHgScore">'+hgScore+'</b></span><span class="gmLives" id="gmHgLives">💛💛💛💛💛💛</span></div>'+
+    '<div class="wCard" style="padding:22px 16px 26px;">'+
+      '<div class="gmHint2">'+gmEsc(hgCur.cn)+'</div>'+
+      '<div class="wIpaRow"><span class="wIpa">/'+gmEsc(hgCur.ipa)+'/</span></div>'+
+      '<div class="gmSlots gmStatic" id="gmHgSlots"></div>'+
+      '<div class="gmKeys" id="gmHgKeys"></div>'+
+      '<div class="gmWarn" id="gmHgMsg"></div>'+
+      '<div class="gmDetail" id="gmHgDetail"></div>'+
+    '</div>'+
+    '<div class="wBtns" id="gmHgNextRow" style="display:none"><button class="wBtn reveal" id="gmHgNext">下一个词 ⟶</button></div>';
+  const sl=$('#gmHgSlots');
+  hgCur.w.split('').forEach(function(){
+    const d=document.createElement('span');
+    d.className='gmSlot2'; d.textContent='_';
+    sl.appendChild(d);
+  });
+  const kb=$('#gmHgKeys');
+  ['qwertyuiop','asdfghjkl','zxcvbnm'].forEach(function(row){
+    const div=document.createElement('div');
+    div.className='gmKeyRow';
+    row.split('').forEach(function(ch){
+      const b=document.createElement('button');
+      b.className='gmKey'; b.textContent=ch.toUpperCase(); b.dataset.ch=ch;
+      div.appendChild(b);
+    });
+    kb.appendChild(div);
+  });
+  $('#gmCount').textContent='第 '+(hgIdx+1)+' 词';
+  $('#gmStats').textContent='点字母或敲键盘猜词；猜错一次少一颗心';
+  $('#gmHgKeys').addEventListener('click', function(ev){
+    const k=ev.target.closest('.gmKey');
+    if(k) hgGuess(k.dataset.ch);
+  });
+  $('#gmHgNext').onclick=function(){ hgIdx++; gmHangWord(); };
+  setTimeout(function(){ gmSpeak(hgCur.w); },250);
+}
+function hgGuess(ch){
+  if(!hgCur || hgDone || hgGuessed[ch]) return;
+  hgGuessed[ch]=1;
+  const key=$('#gmHgKeys').querySelector('.gmKey[data-ch="'+ch+'"]');
+  if(key) key.classList.add('used');
+  const w=hgCur.w;
+  if(w.indexOf(ch)>=0){
+    if(key) key.classList.add('hit');
+    [...$('#gmHgSlots').children].forEach(function(s,i){
+      if(w[i]===ch){ s.textContent=ch.toUpperCase(); s.classList.add('filled'); }
+    });
+    if([...$('#gmHgSlots').children].every(s=>s.classList.contains('filled'))) hgSolve(true);
+  }else{
+    if(key) key.classList.add('miss');
+    hgLives--;
+    const lv=$('#gmHgLives');
+    if(lv) lv.textContent='💛'.repeat(Math.max(0,hgLives))+'🖤'.repeat(Math.min(6,6-hgLives));
+    const msg=$('#gmHgMsg');
+    if(msg) msg.textContent=hgLives>0? '没有这个字母，机会 -1' : '';
+    if(hgLives<=0) hgSolve(false);
+  }
+}
+function hgSolve(ok){
+  hgDone=true;
+  let pts=0;
+  if(ok){
+    pts=10+hgLives;
+    hgScore+=pts; hgSolved++;
+    const sc=$('#gmHgScore'); if(sc) sc.textContent=hgScore;
+    showToast('救援成功 +'+pts+' 分');
+  }else{
+    showToast('这个词没救出来…');
+    const msg=$('#gmHgMsg'); if(msg) msg.textContent='';
+  }
+  [...$('#gmHgSlots').children].forEach(function(s,i){
+    s.textContent=hgCur.w[i].toUpperCase();
+    s.classList.add(ok?'filled':'missed');
+  });
+  const det=$('#gmHgDetail');
+  det.innerHTML='<b>'+gmEsc(hgCur.w)+'</b><i>/'+gmEsc(hgCur.ipa)+'/</i>'+(ok?'<span class="pt">+ '+pts+' 分</span>':'')+
+    '<p>'+gmEsc(hgCur.cn)+'</p>';
+  det.classList.add('shown');
+  $('#gmHgKeys').querySelectorAll('.gmKey').forEach(k=>k.disabled=true);
+  $('#gmHgNextRow').style.display='flex';
+  $('#gmHgNext').textContent=hgIdx>=4? '查看战报 ⟶' : '下一个词 ⟶';
+  $('#gmHgNext').onclick=function(){ hgIdx++; gmHangWord(); };
+}
+function gmHangEnd(){
+  const b=gmGamesBest(), hb=b.hang||{};
+  const rec=!hb.score || hgScore>hb.score;
+  hb.score=Math.max(hb.score||0, hgScore);
+  b.hang=hb; gmSaveBest(b);
+  $('#gmBest').textContent=gmBestText();
+  $('#gmStage').innerHTML=
+    '<div class="wCard"><div class="wDone">'+(hgScore>0?'🎉 救援完成':'💪 再接再厉')+'</div>'+
+    '<div class="wDoneSub">本轮得分 '+hgScore+' · 救出 '+hgSolved+' / 5 词'+(rec?' · 🏆 新纪录':'')+'</div>'+
+    '<div class="wBtns"><button class="wBtn again" id="gmHgAgain">🔁 再来一轮</button></div></div>';
+  $('#gmCount').textContent=''; $('#gmStats').textContent='';
+  $('#gmHgAgain').onclick=gmHangStart;
+  if(rec) showToast('🏆 新纪录：'+hgScore+' 分');
+}
+/* 物理键盘猜字母（仅救援进行中且游戏角可见时生效） */
+document.addEventListener('keydown', function(ev){
+  if(gmCur!=='hang' || !hgCur || hgDone) return;
+  const sec=document.getElementById('games');
+  if(!sec || sec.style.display==='none') return;
+  if(ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  const m=/^([a-zA-Z])$/.exec(ev.key);
+  if(m) hgGuess(m[1].toLowerCase());
+});
+
+/* ---------- 游戏角绑定 ---------- */
+$('#gmBack').onclick=function(){ gmStopAll(); showHome(); };
+$('#gmLevelSeg').addEventListener('click', function(ev){
+  const b=ev.target.closest('button');
+  if(!b || b.dataset.v===gmLevel) return;
+  gmLevel=b.dataset.v;
+  try{ localStorage.setItem('yt_gamelevel', gmLevel); }catch(e){}
+  gmPoolCache=null; ruPoolCache=null;
+  gmStopAll();
+  gmSyncSegs();
+  renderGm();
+  showToast('词库级别已切换');
+});
+$('#gameSeg').addEventListener('click', function(ev){
+  const b=ev.target.closest('button');
+  if(!b || b.dataset.v===gmCur) return;
+  gmCur=b.dataset.v;
+  gmStopAll();
+  gmSyncSegs();
+  renderGm();
+});
