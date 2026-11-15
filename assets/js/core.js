@@ -1340,59 +1340,69 @@ try{
     });
   }
 }catch(e){ WB_CLOUD=null; }
-async function wbCloudChat(msgs,timeoutMs){
-  if(!WB_CLOUD) return null;
+async function wbCloudChat(msgs,timeoutMs,temp){
+  let txt='';
+  if(!WB_CLOUD) return txt;
   try{
     if(!WB_MODELS){
       WB_MODELS=await WB_CLOUD.llm.models.list();
       if(!Array.isArray(WB_MODELS)) WB_MODELS=[];
     }
     const model=WB_MODELS.find(function(m){ return m&&m.disabled!==true; });
-    if(!model) return null;
+    if(!model) return txt;
     /* 接口要求第一条必须是 system 消息 */
     const outMsgs=(msgs[0]&&msgs[0].role==='system')?msgs
       :[{role:'system',content:'You are a helpful assistant. Be concise and helpful.'}].concat(msgs);
     const ctrl=new AbortController();
     AI_CTRL=ctrl;   /* 接入全局取消：生成中点「取消」立即中断云端流式输出 */
-    const tm=setTimeout(function(){ ctrl.abort(); }, timeoutMs||60000);
-    let txt='';
+    /* 空闲超时取代总超时：流式输出只要还在产 token 就不掐，
+       只有 45s 没有任何新内容才断；总时长仍受 timeoutMs 硬顶 */
+    const total=timeoutMs||60000, t0=Date.now();
+    let idleTm=setTimeout(function(){ ctrl.abort(); }, 45000);
     for await (const chunk of WB_CLOUD.llm.chat.completions.create({
-      model:model.id, messages:outMsgs, stream:true, temperature:0.95, signal:ctrl.signal
+      model:model.id, messages:outMsgs, stream:true, temperature:(temp!=null?temp:0.75), signal:ctrl.signal
     })){
-      if(AI_CANCEL){ clearTimeout(tm); AI_CTRL=null; try{ctrl.abort();}catch(e){} return null; }
+      if(AI_CANCEL){ clearTimeout(idleTm); AI_CTRL=null; try{ctrl.abort();}catch(e){} return ''; }
+      clearTimeout(idleTm);
+      if(Date.now()-t0>total){ try{ctrl.abort();}catch(e){} break; }
+      idleTm=setTimeout(function(){ ctrl.abort(); }, 45000);
       const d=chunk.choices&&chunk.choices[0]&&chunk.choices[0].delta;
       if(d&&d.content) txt+=d.content;
     }
-    clearTimeout(tm); AI_CTRL=null;
-    return txt;
-  }catch(e){ AI_CTRL=null; return null; }
+    clearTimeout(idleTm); AI_CTRL=null;
+  }catch(e){ AI_CTRL=null; }
+  return txt;   /* 超时/中断的半截输出也返回，交给 extractJSON 抢救 */
 }
-async function aiChat(sys,usr,timeoutMs,minLen){
+async function aiChat(sys,usr,timeoutMs,minLen,opts){
   AI_CANCEL=false;   /* 复位取消标记（上次任务取消后不污染本次，「测试连通」不再永久失败） */
   const msgs=[{role:'system',content:sys},{role:'user',content:usr}];
+  const temp=(opts&&opts.temp!=null)?opts.temp:0.75;
   const cfg=aiCfg();
   /* ① WorkBuddy 云端 AI：免密钥，优先使用 */
   try{
-    const wbTxt=await wbCloudChat(msgs,timeoutMs);
+    const wbTxt=await wbCloudChat(msgs,timeoutMs,temp);
     if(AI_CANCEL) return null;
     if(wbTxt&&wbTxt.trim().length>(minLen||80)) return wbTxt;
   }catch(e){ if(AI_CANCEL) return null; }
   await ollamaProbe();
-  /* 端点优先级：用户自定义 → Ollama 本地（探测可达才用） → 免费无密钥兜底 */
+  /* 端点优先级：用户自定义 → Ollama 本地（探测可达才用） → 免费无密钥兜底。
+     第 2 个及以后的端点把单端点超时压到 100s，避免整条链路等太久 */
   const eps=[];
   if(cfg.url) eps.push({url:cfg.url, model:cfg.model||'gpt-4o-mini', key:cfg.key||''});
   if(spkOllamaOK) eps.push({url:'http://localhost:11434/v1/chat/completions', model:cfg.ollamaModel||'qwen2.5:7b', key:''});
   AI_FREE.forEach(function(ep){ eps.push({url:ep.url, model:ep.model, key:ep.key}); });
-  for(const ep of eps){
+  for(let ei=0; ei<eps.length; ei++){
+    const ep=eps[ei];
+    const epTm=(ei===0)?(timeoutMs||60000):Math.min(timeoutMs||60000, 100000);
     try{
       const ctrl=new AbortController();
       AI_CTRL=ctrl;
-      const tm=setTimeout(function(){ ctrl.abort(); }, timeoutMs||60000);
+      const tm=setTimeout(function(){ ctrl.abort(); }, epTm);
       let res,txt='';
       const headers={'Content-Type':'application/json'};
       if(ep.key) headers['Authorization']='Bearer '+ep.key;
       res=await fetch(ep.url,{method:'POST',signal:ctrl.signal,headers:headers,
-        body:JSON.stringify({model:ep.model,messages:msgs,temperature:0.95})});
+        body:JSON.stringify({model:ep.model,messages:msgs,temperature:temp})});
       if(!res.ok) throw new Error('HTTP '+res.status);
       const j=await res.json();
       txt=(j.choices&&j.choices[0]&&j.choices[0].message)? j.choices[0].message.content : (j.content||'');
@@ -1418,9 +1428,48 @@ function aiHist(kind){ try{ return JSON.parse(localStorage.getItem('yt_ai_'+kind
 function aiHistPush(kind,v){ var a=aiHist(kind); a.push(v); if(a.length>8) a=a.slice(-8); try{ localStorage.setItem('yt_ai_'+kind, JSON.stringify(a)); }catch(e){} }
 function extractJSON(txt){
   if(!txt) return null;
-  const a=txt.indexOf('{'), b=txt.lastIndexOf('}');
-  if(a<0||b<=a) return null;
-  try{ return JSON.parse(txt.slice(a,b+1)); }catch(e){ return null; }
+  /* 大模型 JSON 输出抢救器：剥壳 → 常见瑕疵修复 → 截断回退补括号，三段式尽力解析 */
+  txt=String(txt).replace(/^\uFEFF/,'').replace(/```[a-zA-Z]*\s*/g,'').replace(/```/g,'').trim();
+  const a=txt.indexOf('{'); if(a<0) return null;
+  const body=txt.slice(a);
+  const cands=[];
+  const b=body.lastIndexOf('}');
+  if(b>a) cands.push(body.slice(0,b+1));
+  cands.push(body);
+  for(const base of cands){
+    for(const s of [base,
+                    base.replace(/[“”]/g,'"').replace(/[‘’]/g,"'"),
+                    base.replace(/,\s*([}\]])/g,'$1'),
+                    base.replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/,\s*([}\]])/g,'$1')]){
+      try{ return JSON.parse(s); }catch(e){}
+    }
+  }
+  /* 截断抢救：扫括号栈，回退到最后一个完整闭合的元素，再按深度补全闭合符 */
+  let inStr=false, esc=false;
+  const stack=[];
+  let best=null;
+  for(let i=0;i<body.length;i++){
+    const ch=body[i];
+    if(inStr){ if(esc) esc=false; else if(ch==='\\') esc=true; else if(ch==='"') inStr=false; continue; }
+    if(ch==='"'){ inStr=true; continue; }
+    if(ch==='{'||ch==='['){ stack.push(ch); continue; }
+    if(ch==='}'||ch===']'){
+      const top=stack[stack.length-1];
+      if((ch==='}'&&top==='{')||(ch===']'&&top==='[')){
+        stack.pop();
+        best={pos:i+1, open:stack.slice()};
+      }else{ break; }
+      continue;
+    }
+  }
+  if(best&&best.pos>200){
+    const closers=best.open.slice().reverse().map(function(br){ return br==='{'?'}':']'; }).join('');
+    const frag=body.slice(0,best.pos)+closers;
+    for(const s of [frag, frag.replace(/,\s*([}\]])/g,'$1')]){
+      try{ return JSON.parse(s); }catch(e){}
+    }
+  }
+  return null;
 }
 async function aiBuildReading(){
   const avoid=aiHist('read');
@@ -1452,7 +1501,7 @@ async function aiBuildReading(){
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+(attempt===1?' 再次强调：必须至少'+MINP+'个自然段、全文'+MINW+'词以上，不许偷工减料，篇幅宁可偏长也不要只写几段。':'')+tail;
-    const txt=await aiChat(sys,usr,180000);
+    const txt=await aiChat(sys,usr,180000,80,{temp:0.55});
     if(!txt) continue;
     const j=extractJSON(txt); if(!j) continue;
     const paras=(j.paras||[]).map(function(p){
@@ -1462,7 +1511,9 @@ async function aiBuildReading(){
     }).filter(function(a){ return a.length>=3 && a.every(function(s){ return s.en.length>=25 && s.cn; }); });
     if(!j.title || paras.length<MINP) continue;
     var wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); });
-    if(wc<MINW) continue;   /* 段数或字数不达标：重试一次，仍不足则返回 null 走本地引擎 */
+    /* 字数容差：差 40 词以内（或 88%）也算合格——真 AI 略短也远好于回落本地，避免白耗两次整生成 */
+    const WC_MIN=Math.max(MINW-40, Math.round(MINW*0.88));
+    if(wc<WC_MIN) continue;   /* 段数或字数不达标：重试一次，仍不足则返回 null 走本地引擎 */
     const words=(j.words||[]).filter(function(w){ return w&&w.w; }).slice(0,14)
       .map(function(w){ return {w:String(w.w), cn:String(w.cn||'')}; });
     /* AI 命题的阅读理解题：校验结构（题干 + 4 选项 + 合法答案下标），不足 4 题则不附带 */
@@ -1496,7 +1547,7 @@ async function aiBuildCloze(){
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+(attempt===1?' 再次强调：短文必须达到'+MINW+'词以上，不许只写一段或几句话。':'')+tail;
-    const txt=await aiChat(sys,usr,180000);
+    const txt=await aiChat(sys,usr,180000,80,{temp:0.55});
     if(!txt) continue;
     const j=extractJSON(txt); if(!j) continue;
     const opts=(j.options||[]).filter(function(o){ return o&&o.w&&o.cn; }).slice(0,15)
@@ -1509,7 +1560,7 @@ async function aiBuildCloze(){
     const paras=(j.paras||[]).filter(function(p){ return p&&p.en&&p.en.length>=120; }).map(function(p){ return {en:String(p.en), cn:String(p.cn||'')}; });
     if(opts.length<15 || validAnswers.length!==10 || !paras.length) continue;
     var wc=0; paras.forEach(function(p){ wc+=p.en.replace(/__\d+__/g,' ').trim().split(/\s+/).filter(Boolean).length; });
-    if(wc<MINW) continue;   /* 短文长度不达真题标准：重试一次，仍不足则回落本地引擎 */
+    if(wc<Math.max(MINW-20, Math.round(MINW*0.9))) continue;   /* 短文长度不达真题标准：重试一次，仍不足则回落本地引擎 */
     return {titleEn:String(j.title||'AI Cloze'), titleCn:String(j.titleCn||''),
             paras:paras, options:opts, answers:validAnswers, src:'ai'};
   }
@@ -3462,7 +3513,7 @@ async function aiBuildLongRead(){
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+(attempt===1?' 再次强调：段落必须 12 个以上、总词数达标、恰好 10 道题且出处段落互不相同。':'')+tail;
-    const txt=await aiChat(sys,usr,180000);
+    const txt=await aiChat(sys,usr,180000,80,{temp:0.55});
     if(!txt) continue;
     const j=extractJSON(txt); if(!j) continue;
     const paras=(j.paras||[]).filter(function(p){ return p&&p.en&&p.en.length>=100; })
