@@ -1340,16 +1340,10 @@ try{
     });
   }
 }catch(e){ WB_CLOUD=null; }
-async function wbCloudChat(msgs,timeoutMs,temp){
+async function wbCloudChat(msgs,timeoutMs,temp,modelId){
   let txt='';
-  if(!WB_CLOUD) return txt;
+  if(!WB_CLOUD||!modelId) return txt;
   try{
-    if(!WB_MODELS){
-      WB_MODELS=await WB_CLOUD.llm.models.list();
-      if(!Array.isArray(WB_MODELS)) WB_MODELS=[];
-    }
-    const model=WB_MODELS.find(function(m){ return m&&m.disabled!==true; });
-    if(!model) return txt;
     /* 接口要求第一条必须是 system 消息 */
     const outMsgs=(msgs[0]&&msgs[0].role==='system')?msgs
       :[{role:'system',content:'You are a helpful assistant. Be concise and helpful.'}].concat(msgs);
@@ -1360,7 +1354,7 @@ async function wbCloudChat(msgs,timeoutMs,temp){
     const total=timeoutMs||60000, t0=Date.now();
     let idleTm=setTimeout(function(){ ctrl.abort(); }, 45000);
     for await (const chunk of WB_CLOUD.llm.chat.completions.create({
-      model:model.id, messages:outMsgs, stream:true, temperature:(temp!=null?temp:0.75), signal:ctrl.signal
+      model:modelId, messages:outMsgs, stream:true, temperature:(temp!=null?temp:0.75), signal:ctrl.signal
     })){
       if(AI_CANCEL){ clearTimeout(idleTm); AI_CTRL=null; try{ctrl.abort();}catch(e){} return ''; }
       clearTimeout(idleTm);
@@ -1373,44 +1367,90 @@ async function wbCloudChat(msgs,timeoutMs,temp){
   }catch(e){ AI_CTRL=null; }
   return txt;   /* 超时/中断的半截输出也返回，交给 extractJSON 抢救 */
 }
+/* ---------- AI 链路诊断：失败不再静默，逐端点记录原因 ---------- */
+function aiDiagPush(steps){
+  if(!steps||!steps.length) return;
+  try{
+    const a=JSON.parse(localStorage.getItem('yt_aidiag')||'[]');
+    a.push({t:Date.now(), steps:steps});
+    if(a.length>6) a=a.slice(-6);
+    localStorage.setItem('yt_aidiag', JSON.stringify(a));
+  }catch(e){}
+}
+function aiDiagSummary(){
+  try{
+    const a=JSON.parse(localStorage.getItem('yt_aidiag')||'[]');
+    const last=a[a.length-1]; if(!last) return '';
+    return last.steps.map(function(s){ return s.ep+':'+s.st+(s.x?('('+s.x+')'):''); }).join(' · ').slice(0,60);
+  }catch(e){ return ''; }
+}
+window.__ytAiDiag=function(){ try{ return JSON.parse(localStorage.getItem('yt_aidiag')||'[]'); }catch(e){ return []; } };
 async function aiChat(sys,usr,timeoutMs,minLen,opts){
   AI_CANCEL=false;   /* 复位取消标记（上次任务取消后不污染本次，「测试连通」不再永久失败） */
   const msgs=[{role:'system',content:sys},{role:'user',content:usr}];
   const temp=(opts&&opts.temp!=null)?opts.temp:0.75;
   const cfg=aiCfg();
-  /* ① WorkBuddy 云端 AI：免密钥，优先使用 */
+  const diag=[];
+  const mark=function(ep,st,ms,x){ diag.push({ep:ep,st:st,ms:ms,x:x||''}); };
+  /* ① WorkBuddy 云端 AI：免密钥优先；主模型空/短则换备用模型再试一轮 */
   try{
-    const wbTxt=await wbCloudChat(msgs,timeoutMs,temp);
-    if(AI_CANCEL) return null;
-    if(wbTxt&&wbTxt.trim().length>(minLen||80)) return wbTxt;
-  }catch(e){ if(AI_CANCEL) return null; }
+    if(WB_CLOUD){
+      if(!WB_MODELS){
+        try{
+          WB_MODELS=await WB_CLOUD.llm.models.list();
+          if(!Array.isArray(WB_MODELS)) WB_MODELS=[];
+        }catch(e){ WB_MODELS=[]; }
+      }
+      const ids=WB_MODELS.filter(function(m){ return m&&m.disabled!==true; }).map(function(m){ return m.id; }).slice(0,2);
+      if(!ids.length){ mark('WB','无可用模型',0); }
+      for(let mi=0; mi<ids.length; mi++){
+        const t0=Date.now();
+        const txt=await wbCloudChat(msgs, mi===0?(timeoutMs||60000):45000, temp, ids[mi]);
+        if(AI_CANCEL) return null;
+        const ms=Date.now()-t0;
+        if(txt&&txt.trim().length>(minLen||80)){ mark('WB:'+ids[mi],'ok',ms,txt.length+'字'); aiDiagPush(diag); return txt; }
+        mark('WB:'+ids[mi],'空/短',ms,(txt||'').length+'字');
+      }
+    }
+  }catch(e){ if(AI_CANCEL) return null; mark('WB','异常',0,String(e&&e.message||e).slice(0,50)); }
   await ollamaProbe();
   /* 端点优先级：用户自定义 → Ollama 本地（探测可达才用） → 免费无密钥兜底。
      第 2 个及以后的端点把单端点超时压到 100s，避免整条链路等太久 */
   const eps=[];
-  if(cfg.url) eps.push({url:cfg.url, model:cfg.model||'gpt-4o-mini', key:cfg.key||''});
-  if(spkOllamaOK) eps.push({url:'http://localhost:11434/v1/chat/completions', model:cfg.ollamaModel||'qwen2.5:7b', key:''});
-  AI_FREE.forEach(function(ep){ eps.push({url:ep.url, model:ep.model, key:ep.key}); });
+  if(cfg.url) eps.push({name:'自定义', url:cfg.url, model:cfg.model||'gpt-4o-mini', key:cfg.key||''});
+  if(spkOllamaOK) eps.push({name:'Ollama', url:'http://localhost:11434/v1/chat/completions', model:cfg.ollamaModel||'qwen2.5:7b', key:''});
+  AI_FREE.forEach(function(ep,i){ eps.push({name:'兜底'+(i+1), url:ep.url, model:ep.model, key:ep.key}); });
   for(let ei=0; ei<eps.length; ei++){
     const ep=eps[ei];
     const epTm=(ei===0)?(timeoutMs||60000):Math.min(timeoutMs||60000, 100000);
+    const t0=Date.now();
+    let tm=null;
     try{
       const ctrl=new AbortController();
       AI_CTRL=ctrl;
-      const tm=setTimeout(function(){ ctrl.abort(); }, epTm);
-      let res,txt='';
+      tm=setTimeout(function(){ ctrl.abort(); }, epTm);
       const headers={'Content-Type':'application/json'};
       if(ep.key) headers['Authorization']='Bearer '+ep.key;
-      res=await fetch(ep.url,{method:'POST',signal:ctrl.signal,headers:headers,
+      const res=await fetch(ep.url,{method:'POST',signal:ctrl.signal,headers:headers,
         body:JSON.stringify({model:ep.model,messages:msgs,temperature:temp})});
-      if(!res.ok) throw new Error('HTTP '+res.status);
+      const ms=Date.now()-t0;
+      if(!res.ok){ clearTimeout(tm); AI_CTRL=null; mark(ep.name,'HTTP '+res.status,ms); continue; }
       const j=await res.json();
-      txt=(j.choices&&j.choices[0]&&j.choices[0].message)? j.choices[0].message.content : (j.content||'');
-      clearTimeout(tm);
+      const txt=(j.choices&&j.choices[0]&&j.choices[0].message)? j.choices[0].message.content : (j.content||'');
+      clearTimeout(tm); AI_CTRL=null;
       if(AI_CANCEL) return null;
-      if(txt&&txt.trim().length>(minLen||80)) return txt;
-    }catch(e){ if(AI_CANCEL) return null; }
+      if(txt&&txt.trim().length>(minLen||80)){ mark(ep.name,'ok',ms,txt.length+'字'); aiDiagPush(diag); return txt; }
+      mark(ep.name,'空/短',ms,(txt||'').length+'字');
+    }catch(e){
+      if(tm) clearTimeout(tm);
+      AI_CTRL=null;
+      if(AI_CANCEL) return null;
+      const ms=Date.now()-t0;
+      const msg=String(e&&e.message||e);
+      mark(ep.name, /abort/i.test(msg)?'超时':msg.slice(0,30), ms);
+    }
   }
+  aiDiagPush(diag);
   return null;
 }
 let spkOllamaOK=null;
@@ -2152,7 +2192,7 @@ async function buildClozePassage(){
     var ai=null;
     try{ ai=await aiBuildCloze(); }catch(e){}
     if(ai){ aiLoadingDone(true); await aiLoadingWait(1300); aiLoadingHide(); showToast('✅ AI 生成成功'); }
-    else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1300); aiLoadingHide(); showToast('❌ AI 生成失败，已改用本地生成'); }
+    else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1300); aiLoadingHide(); showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成'); }
     if(ai){
       aiHistPush('cloze', ai.titleEn);
       cloze={kind:'ai', levelLabel:cl.label, title:ai.titleEn, titleCn:ai.titleCn,
@@ -2165,7 +2205,7 @@ async function buildClozePassage(){
       window.scrollTo(0,0);
       return;
     }
-    showToast('❌ AI 生成失败，已改用本地生成');
+    showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成');
   }
   try{ await ensureWordBank(); }catch(e){ showToast('词库加载失败，请检查网络后重试'); return; }
   cloze=buildLocalClozeData(clozeLevel);
@@ -2592,7 +2632,7 @@ async function newDialog(autoStart){
     var d=null;
     try{ d=await aiBuildDialog(); }catch(e){}
     if(d){ aiLoadingDone(true); await aiLoadingWait(1300); aiLoadingHide(); showToast('✅ AI 生成成功'); }
-    else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1300); aiLoadingHide(); showToast('❌ AI 生成失败，已改用本地生成'); }
+    else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1300); aiLoadingHide(); showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成'); }
     if(d){
       aiHistPush('talk', d.name+'：'+d.lines[0].en);
       spk={dialog:{icon:'🤖',name:d.name,lines:d.lines}, cur:0, listening:false, paused:false,
@@ -2602,7 +2642,7 @@ async function newDialog(autoStart){
       if(autoStart) startLine(0);
       return;
     }
-    showToast('❌ AI 生成失败，已改用本地生成');
+    showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成');
   }
   const last=localStorage.getItem('yt_dlast')||'';
   let pool=SCENES.filter(function(x){ return x.name!==last; });
@@ -3171,7 +3211,7 @@ async function generateAndShow(){
     var ai=null;
     try{ ai=await aiBuildReading(); }catch(e){}
     if(ai){ aiLoadingDone(true); await aiLoadingWait(1300); aiLoadingHide(); showToast('✅ AI 生成成功'); }
-    else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1300); aiLoadingHide(); showToast('❌ AI 生成失败，已改用本地生成'); }
+    else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1300); aiLoadingHide(); showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成'); }
     if(ai){
       var words=0; ai.paras.forEach(function(pa){ pa.forEach(function(s){ words+=s.en.split(/\s+/).length; }); });
       aiHistPush('read', ai.titleEn);
@@ -3182,7 +3222,7 @@ async function generateAndShow(){
       renderPassage(p); showReader(); setHash('#read');
       return;
     }
-    showToast('❌ AI 生成失败，已改用本地生成');
+    showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成');
   }
   try{
     const p=buildPassage(curDiff);
@@ -3422,7 +3462,7 @@ async function lrGenerate(){
   var ai=null;
   try{ ai=await aiBuildLongRead(); }catch(e){}
   if(ai){ aiLoadingDone(true); await aiLoadingWait(1000); aiLoadingHide(); showToast('✅ AI 生成成功'); }
-  else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1000); aiLoadingHide(); showToast('❌ AI 生成失败，已改用本地生成'); }
+  else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1000); aiLoadingHide(); showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成'); }
   if(ai){
     lrState={level:lrLevel, title:ai.titleEn, titleCn:ai.titleCn, paras:ai.paras, statements:ai.statements,
              answers:new Array(ai.statements.length).fill(null), submitted:false, src:'ai'};
