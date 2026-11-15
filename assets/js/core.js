@@ -1531,7 +1531,7 @@ async function aiBuildDialog(){
   if(lines.length<10 || words<140) return null;
   return {icon:'🤖', name:String(j.scene||'AI 对话'), lines:lines, src:'ai'};
 }
-function showOnly(id){ ['home','reader','profile','words','quiz','cloze','speak','longread','games','writing','mock'].forEach(s=>{ $('#'+s).style.display = (s===id)?'block':'none'; }); }
+function showOnly(id){ ['home','reader','profile','words','quiz','cloze','speak','longread','games','writing','mock','trans'].forEach(s=>{ $('#'+s).style.display = (s===id)?'block':'none'; }); }
 function showReader(){ showOnly('reader'); }
 function showHome(){ stopTts(); showOnly('home'); updateMeBtn(); window.scrollTo(0,0); }
 function showProfile(){ stopTts(); showOnly('profile'); renderProfile(); window.scrollTo(0,0); }
@@ -2089,9 +2089,9 @@ function openCloze(lv){
   clozeLevel=lv||clozeLevel||'cet4';
   stopTts();
   showOnly('cloze');
-  $('#cLevel').textContent=CLOZE_LEVELS[clozeLevel].label;
-  [...$('#clozeLevel').children].forEach(function(b){ b.classList.toggle('on', b.dataset.v===clozeLevel); });
-  buildClozePassage();
+  syncClozeSegs();
+  if(cloze1Mode==='cloze1'){ buildCloze1(); }
+  else { $('#cLevel').textContent=CLOZE_LEVELS[clozeLevel].label; buildClozePassage(); }
   window.scrollTo(0,0);
 }
 async function buildClozePassage(){
@@ -2121,9 +2121,10 @@ async function buildClozePassage(){
   renderCloze();
 }
 /* 本地选词填空构造（独立函数：仿真模考复用同一数据形态） */
-function buildLocalClozeData(lv){
+function buildLocalClozeData(lv, nBlanks, withBank, passageOverride){
+  nBlanks=nBlanks||10; if(withBank===undefined) withBank=true;
   const cl=CLOZE_LEVELS[lv];
-  const p=buildPassage(cl.diff, cl.plan);   /* 按真题选词填空篇幅（四级 200-250 词 / 六级 250-300 词）出短文 */
+  const p=passageOverride || buildPassage(cl.diff, cl.plan);   /* 按真题选词填空篇幅（四级 200-250 词 / 六级 250-300 词）出短文 */
   const sents=[]; p.paras.forEach(function(pa){ pa.forEach(function(s){ sents.push(s); }); });
   /* 全文词频（多次出现的词不挖空，避免泄答案） */
   const freq={};
@@ -2147,7 +2148,7 @@ function buildLocalClozeData(lv){
   cand.sort(function(a,b){ return b.score-a.score || a.sent-b.sent; });
   /* 词性多样贪心挖 10 空：一句一空、每类词性最多 3 个 */
   const blanks=[], cls={}, usedSent={};
-  for(let i=0;i<cand.length && blanks.length<10;i++){
+  for(let i=0;i<cand.length && blanks.length<nBlanks;i++){
     const c=cand[i];
     if(usedSent[c.sent] || blanks.some(function(b){ return b.word===c.word; })) continue;
     const pc=(c.m&&c.m.pos?c.m.pos:'x').charAt(0);
@@ -2155,15 +2156,18 @@ function buildLocalClozeData(lv){
     blanks.push({sent:c.sent, ti:c.ti, word:c.word, m:c.m, user:null, ok:null});
     cls[pc]=(cls[pc]||0)+1; usedSent[c.sent]=1;
   }
-  for(let i=0;i<cand.length && blanks.length<10;i++){   // 放宽词性补齐
+  for(let i=0;i<cand.length && blanks.length<nBlanks;i++){   // 放宽词性补齐
     const c=cand[i];
     if(usedSent[c.sent] || blanks.some(function(b){ return b.word===c.word; })) continue;
     blanks.push({sent:c.sent, ti:c.ti, word:c.word, m:c.m, user:null, ok:null});
     usedSent[c.sent]=1;
   }
-  /* 空格序号严格按文章顺序 1→10 */
+  /* 空格序号严格按文章顺序 1→N */
   blanks.sort(function(a,b){ return a.sent-b.sent || a.ti-b.ti; });
-  /* 词库：10 正确词 + 5 干扰项（按空格词性配比，均不在文中出现） */
+  /* 词库：N 正确词 + 5 干扰项（按空格词性配比，均不在文中出现）；完形模式不需要词库 */
+  if(!withBank){
+    return {level:lv, passage:p, sents:sents, blanks:blanks, done:false, right:0, bank:[]};
+  }
   let bank=blanks.map(function(b){ return b.word; });
   const inText=sents.map(function(s){ return s.en.toLowerCase(); }).join(' ');
   let pool=Object.keys(wm).filter(function(w){ return w.length>=4 && !inText.includes(w) && bank.indexOf(w)<0; });
@@ -4126,6 +4130,23 @@ function renderPanel(){
   const el=document.getElementById('panel'); if(!el) return;
   const st=getStats(), daily=getDaily();
   const ds=function(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  /* 每日目标卡 */
+  const goal=getGoals();
+  const todayKey=ds(new Date());
+  const d0=daily[todayKey]||{read:0,words:0};
+  const need=Number(goal.n)||1;
+  const cur=Number(d0.read)||0;
+  const goalDone=cur>=need;
+  const goalPct=Math.min(100,Math.round(cur/need*100));
+  const goalHtml=
+    '<div class="glCard'+(goalDone?' glDone':'')+'">'+
+      '<div class="glHead">🎯 今日目标 · 阅读 '+need+' 篇 '+(goalDone?'<span class="glDone2">✅ 已完成</span>':'<span class="glTodo">今日 '+cur+' / '+need+'</span>')+'</div>'+
+      '<div class="pnBar"><i style="width:'+goalPct+'%"></i></div>'+
+      '<div class="glSet">目标：<button class="glBtn'+(need===1?' on':'')+'" data-n="1">1 篇</button>'+
+      '<button class="glBtn'+(need===2?' on':'')+'" data-n="2">2 篇</button>'+
+      '<button class="glBtn'+(need===3?' on':'')+'" data-n="3">3 篇</button>'+
+      '<button class="glBtn" id="glRemind">🔔 学习提醒：'+(goal.remind===false?'关':'开')+'</button></div>'+
+    '</div>';
   const cells=[];
   for(let i=83;i>=0;i--){
     const d=new Date(Date.now()-i*86400000);
@@ -4147,6 +4168,7 @@ function renderPanel(){
     return '<div class="pnBarRow"><span>'+gmEsc(w.date.slice(5))+' '+gmEsc(w.typeName)+'</span><div class="pnBar"><i style="width:'+Math.round((w.total||0)/Math.max(1,w.full||20)*100)+'%"></i></div><b>'+(w.total||0)+'/'+(w.full||20)+'</b></div>';
   }).join('');
   el.innerHTML=
+    goalHtml+
     '<div class="inkLabel">学习面板 <span class="inkHint">（近 12 周，每格一天）</span></div>'+
     '<div class="pnCard">'+
       '<div class="pnHeat">'+cells.join('')+'</div>'+
@@ -4156,7 +4178,20 @@ function renderPanel(){
       '<div class="pnBarRow"><span>词汇巩固中</span><div class="pnBar"><i class="pnAmber" style="width:'+(wtot?Math.round(wu/Math.max(1,wtot)*100):0)+'%"></i></div><b>'+wu+'</b></div>'+
       (typeRows?('<div class="pnSec">错题类型分布（'+wb.length+' 题）</div>'+typeRows):'')+
       (wrRows?('<div class="pnSec">最近写作成绩</div>'+wrRows):'')+
+      '<div class="wBtns"><button class="wBtn slim" id="pnCardBtn">📸 生成今日打卡图</button></div>'+
     '</div>';
+  el.querySelectorAll('.glBtn[data-n]').forEach(function(b){
+    b.onclick=function(){
+      const g=getGoals(); g.n=Number(b.dataset.n); saveGoals(g); renderPanel();
+    };
+  });
+  const rem=document.getElementById('glRemind');
+  if(rem) rem.onclick=function(){
+    const g=getGoals(); g.remind=(g.remind===false)?true:false; saveGoals(g); renderPanel();
+    showToast(g.remind===false?'学习提醒已关闭':'🔔 学习提醒已开启（打开应用时提醒当日目标）');
+  };
+  const cb=document.getElementById('pnCardBtn');
+  if(cb) cb.onclick=makeShareCard;
 }
 
 /* ---------- AI 作文批改 ---------- */
@@ -4612,3 +4647,339 @@ $('#mockBack').onclick=function(){
   mk=null;
   showHome();
 };
+
+/* ---------- 每日目标 · 提醒 ---------- */
+function getGoals(){ try{ return JSON.parse(localStorage.getItem('yt_goals')||'{"n":1,"remind":true}'); }catch(e){ return {n:1, remind:true}; } }
+function saveGoals(g){ try{ localStorage.setItem('yt_goals', JSON.stringify(g)); }catch(e){} }
+function checkDailyRemind(){
+  const g=getGoals(); if(g.remind===false) return;
+  const st=getStats(); const daily=st.daily||{};
+  const ds=function(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  const d0=daily[ds(new Date())]||{read:0};
+  const need=Number(g.n)||1;
+  if((d0.read||0)>=need) return;
+  let last=0;
+  try{ last=Number(localStorage.getItem('yt_remind')||0); }catch(e){}
+  if(Date.now()-last < 4*3600*1000) return;
+  try{ localStorage.setItem('yt_remind', String(Date.now())); }catch(e){}
+  const msg='今日目标还差 '+Math.max(1,need-(d0.read||0))+' 篇阅读，坚持就是胜利！';
+  showToast('🎯 '+msg);
+  try{
+    if(navigator.serviceWorker && navigator.serviceWorker.controller){
+      navigator.serviceWorker.controller.showNotification('研途阅读 · 每日目标', {body:msg, icon:'./icon-192.png', tag:'yantu-daily'});
+    }
+  }catch(e){}
+}
+setTimeout(checkDailyRemind, 2600);
+
+/* ---------- Anki 导出 ---------- */
+function csvCell(s){ s=String(s==null?'':s); return '"'+s.replace(/"/g,'""')+'"'; }
+function downloadText(name, content){
+  const blob=new Blob([content], {type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+$('#btnAnki').onclick=function(){
+  try{
+    const idx=wordIndex();
+    const ws=getWordState();
+    const rows1=[];
+    Object.keys(ws).forEach(function(w){
+      const e=idx[w]; if(!e) return;
+      rows1.push([w, '/'+(e[1]||'')+'/', e[2]||'', e[3]||'', e[4]||'', e[5]||'', ws[w].s==='k'?'已掌握':'巩固中']);
+    });
+    const csv1='word,ipa,meaning,example,example_cn,tags,status\n'+rows1.map(function(r){ return r.map(csvCell).join(','); }).join('\n');
+    const wb=getWrongBook();
+    const rows2=wb.map(function(x){
+      return [x.type||'', (x.prompt||'')+((x.body)?(' | '+x.body):''), x.correct||'', x.your||'', x.title||''];
+    });
+    const csv2='type,front,correct,yours,source\n'+rows2.map(function(r){ return r.map(csvCell).join(','); }).join('\n');
+    downloadText('yantu-anki-words.csv', '\ufeff'+csv1);
+    setTimeout(function(){ downloadText('yantu-anki-wrong.csv', '\ufeff'+csv2); }, 400);
+    showToast('📤 已导出背词 '+rows1.length+' 词 + 错题 '+rows2.length+' 题（Anki 可导入 CSV）');
+  }catch(e){ showToast('导出失败：'+e.message); }
+};
+
+/* ---------- 分享打卡卡片（canvas 生成 PNG） ---------- */
+function rrPath(ctx,x,y,w,h,r){
+  ctx.beginPath(); ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function makeShareCard(){
+  try{
+    const cv=document.createElement('canvas'); cv.width=900; cv.height=1200;
+    const ctx=cv.getContext('2d');
+    const st=getStats(), daily=getDaily();
+    const ds=function(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+    const today=ds(new Date());
+    const d0=daily[today]||{read:0,words:0};
+    const serif='"Noto Serif SC","Songti SC","STSong",serif';
+    /* 夜幕 */
+    const g=ctx.createLinearGradient(0,0,0,1200);
+    g.addColorStop(0,'#1c150c'); g.addColorStop(.72,'#14100b'); g.addColorStop(1,'#0d0a06');
+    ctx.fillStyle=g; ctx.fillRect(0,0,900,1200);
+    /* 暖晕 */
+    const rg=ctx.createRadialGradient(450,1040,20,450,1040,520);
+    rg.addColorStop(0,'rgba(201,143,45,.16)'); rg.addColorStop(1,'rgba(201,143,45,0)');
+    ctx.fillStyle=rg; ctx.fillRect(0,600,900,600);
+    /* 城郭 + 窗灯 */
+    const bs=[[0,780,92,300],[100,830,88,250],[190,760,104,320],[300,840,70,180],[372,800,112,280],
+              [486,740,106,340],[596,828,66,190],[666,790,98,290],[768,848,72,170],[844,760,110,320],
+              [958,820,86,200],[1048,790,152,290]];
+    ctx.fillStyle='#191209';
+    bs.forEach(function(b){ ctx.fillRect(b[0],b[1],b[2],1200-b[1]); });
+    let seed=7;
+    const rnd=function(){ seed=(seed*9301+49297)%233280; return seed/233280; };
+    bs.forEach(function(b){
+      for(let i=0;i<4;i++){
+        if(rnd()<0.42) continue;
+        ctx.fillStyle='rgba(233,180,92,'+(0.5+rnd()*0.5).toFixed(2)+')';
+        ctx.fillRect(b[0]+10+rnd()*(b[2]-26), b[1]+16+rnd()*(1200-b[1]-40), 8, 12);
+      }
+    });
+    /* 印章 */
+    ctx.save(); ctx.translate(742,132); ctx.rotate(-0.10);
+    ctx.fillStyle='#b5382f'; rrPath(ctx,-42,-42,84,84,10); ctx.fill();
+    ctx.strokeStyle='rgba(246,236,210,.4)'; ctx.lineWidth=2; rrPath(ctx,-36,-36,72,72,8); ctx.stroke();
+    ctx.fillStyle='#f6ecd2'; ctx.font='700 25px '+serif; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('研',-19,-19); ctx.fillText('途',19,-19); ctx.fillText('阅',-19,19); ctx.fillText('读',19,19);
+    ctx.restore();
+    /* 标题 */
+    ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle='#f2e7cc'; ctx.font='700 62px '+serif;
+    ctx.fillText('今日学习打卡', 450, 300);
+    ctx.font='23px '+serif; ctx.fillStyle='rgba(216,184,122,.9)';
+    ctx.fillText(today+' · 考研英语', 450, 348);
+    /* 大数字 */
+    ctx.fillStyle='#d4a24e'; ctx.font='800 118px '+serif;
+    ctx.fillText(String(st.streak||0), 450, 556);
+    ctx.font='25px '+serif; ctx.fillStyle='rgba(232,220,194,.85)';
+    ctx.fillText('连续学习天数', 450, 604);
+    /* 分隔线 */
+    ctx.fillStyle='rgba(212,85,63,.6)'; ctx.fillRect(330,668,240,2);
+    /* 三个统计 */
+    const items=[['累计阅读', (st.read||0)+' 篇'], ['今日完成', (d0.read||0)+' 篇'], ['累计词数', (st.words||0).toLocaleString('en-US')]];
+    items.forEach(function(it,i){
+      const x=190+i*260;
+      ctx.fillStyle='#d4a24e'; ctx.font='700 33px '+serif; ctx.fillText(String(it[1]), x, 756);
+      ctx.fillStyle='rgba(160,142,111,.95)'; ctx.font='17px '+serif; ctx.fillText(it[0], x, 792);
+    });
+    /* 底部 */
+    ctx.fillStyle='rgba(242,231,204,.75)'; ctx.font='19px '+serif;
+    ctx.fillText('研途阅读 · 每天一篇，稳稳上岸', 450, 1128);
+    ctx.fillStyle='rgba(160,142,111,.7)'; ctx.font='15px '+serif;
+    ctx.fillText('yantu-reading.pages.dev', 450, 1160);
+    /* 下载 */
+    const a=document.createElement('a');
+    a.href=cv.toDataURL('image/png');
+    a.download='yantu-打卡-'+today+'.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    showToast('📸 打卡图已生成并保存');
+  }catch(e){ showToast('生成失败：'+e.message); }
+}
+
+/* ---------- 翻译训练 ---------- */
+let transState=null, transBusy=false;
+function showTrans(){
+  stopTts();
+  showOnly('trans');
+  if(!transState) buildTrans();
+  window.scrollTo(0,0);
+}
+function buildTrans(){
+  const p=buildPassage('std', LEVELS.std.plan);
+  const flat=[];
+  p.paras.forEach(function(pa,pi){
+    pa.forEach(function(s,si){ flat.push({pi:pi, si:si, en:s.en, cn:s.cn||'', words:s.en.trim().split(/\s+/).length}); });
+  });
+  flat.sort(function(a,b){ return b.words-a.words; });
+  const picked=flat.slice(0,5);
+  picked.sort(function(a,b){ return (a.pi*1000+a.si)-(b.pi*1000+b.si); });
+  const chosen={}; picked.forEach(function(x){ chosen[x.pi+':'+x.si]=1; });
+  transState={passage:p, picked:picked, chosen:chosen, answers:new Array(picked.length).fill(''), done:false};
+  renderTrans();
+}
+function renderTrans(){
+  const t=transState;
+  $('#trCount').textContent=t.done?('总分 '+(t.result?t.result.total:0)+'/10'):'';
+  let html='<div class="clozeCard"><h3 class="mkTitle">'+gmEsc(t.passage.titleEn)+'</h3>';
+  t.passage.paras.forEach(function(pa,pi){
+    html+='<p>';
+    pa.forEach(function(s,si){
+      html+=(t.chosen[pi+':'+si] ? '<span class="trHL">'+gmEsc(s.en)+'</span>' : gmEsc(s.en))+' ';
+    });
+    html+='</p>';
+  });
+  html+='</div>';
+  html+='<div class="inkLabel">将画线句译成汉语（每句 2 分，共 10 分）</div>';
+  t.picked.forEach(function(x,i){
+    html+='<div class="trQ"><div class="trNo">'+(i+1)+'</div><div class="trBody">'+
+      '<div class="trSent">'+gmEsc(x.en)+'</div>'+
+      '<textarea class="wrInput trInput" rows="2" data-ti="'+i+'" placeholder="在此写出中文译文…">'+gmEsc(t.answers[i])+'</textarea></div></div>';
+  });
+  html+='<div class="wBtns"><button class="wBtn reveal" id="trSubmit">'+(t.done?'✅ 已批改':'✓ 提交批改（AI 逐句评分）')+'</button></div><div id="trResult"></div>';
+  $('#transStage').innerHTML=html;
+  [...document.querySelectorAll('.trInput')].forEach(function(ta){
+    ta.addEventListener('input', function(){ transState.answers[+ta.dataset.ti]=ta.value; });
+  });
+  document.getElementById('trSubmit').onclick=gradeTrans;
+}
+async function gradeTrans(){
+  if(transBusy || transState.done) return;
+  const t=transState;
+  const filled=t.answers.filter(function(a){ return a&&a.trim(); }).length;
+  if(filled===0){ showToast('至少翻译一句再提交'); return; }
+  if(filled<t.picked.length && !confirm('还有 '+(t.picked.length-filled)+' 句未翻译，未译句按 0 分计，确定提交吗？')) return;
+  transBusy=true;
+  const btn=document.getElementById('trSubmit');
+  btn.disabled=true; btn.textContent='⏳ AI 批改中…';
+  const sys='你是考研英语翻译阅卷专家。只输出严格JSON对象，禁止输出任何解释或markdown代码块标记。';
+  let usr='下面是考研英语文章中的 5 个长难句和学生的中文译文。逐句按「信（准确）·达（通顺）」评分，每句满分 2 分（0/0.5/1/1.5/2）。\n';
+  t.picked.forEach(function(x,i){
+    usr+='\n【第'+(i+1)+'句】英文：'+x.en+'\n学生译文：'+(t.answers[i]||'（未作答）')+'\n参考意群：'+x.cn;
+  });
+  usr+='\n输出JSON：{"items":[{"idx":1,"score":2,"comment":"中文点评 20-40 字（指出关键得分点/失分点）","better":"更好的中文译文"}],"total":总分0-10}';
+  let j=null;
+  for(let attempt=0; attempt<2 && !j; attempt++){
+    const txt=await aiChat(sys,usr,120000,80);
+    j=txt?extractJSON(txt):null;
+    if(j && !Array.isArray(j.items)) j=null;
+  }
+  transBusy=false;
+  btn.disabled=false; btn.textContent='✓ 提交批改（AI 逐句评分）';
+  if(!j){ showToast('❌ 批改失败：AI 暂不可用，稍后再试'); return; }
+  t.done=true; t.result=j;
+  const hist=getTrans();
+  const ds=function(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  hist.unshift({date:ds(new Date()), total:Math.max(0,Math.min(10,Math.round(j.total||0)))});
+  saveTrans(hist);
+  renderTrans();
+  const res=document.getElementById('trResult');
+  const items=(j.items||[]).map(function(it){
+    const s2=Math.max(0,Math.min(2,Number(it.score)||0));
+    return '<div class="trRes"><div class="trResHead"><b>第 '+(it.idx||'')+' 句</b><span class="'+(s2>=1.5?'g':(s2>=1?'y':'r'))+'">'+s2+' / 2 分</span></div>'+
+      '<div class="trComment">'+gmEsc(it.comment||'')+'</div>'+
+      (it.better?('<div class="wrFix">✍️ 参考译文：'+gmEsc(it.better)+'</div>'):'')+'</div>';
+  }).join('');
+  res.innerHTML='<div class="pnSec">逐句评分（总分 '+Math.max(0,Math.min(10,Math.round(j.total||0)))+'/10）</div>'+items;
+  showToast('✅ 翻译批改完成：'+Math.max(0,Math.min(10,Math.round(j.total||0)))+'/10 分');
+}
+function getTrans(){ try{ return JSON.parse(localStorage.getItem('yt_trans')||'[]'); }catch(e){ return []; } }
+function saveTrans(h){ try{ localStorage.setItem('yt_trans', JSON.stringify(h.slice(0,20))); }catch(e){} }
+$('#trBack').onclick=function(){ stopTts(); showHome(); };
+
+/* ---------- 考研一 · 完形填空（20 空四选一） ---------- */
+let cloze1Mode='select', c1=null;
+try{ cloze1Mode=localStorage.getItem('yt_cloze1mode')||'select'; }catch(e){}
+function syncClozeSegs(){
+  [...$('#clozeModeSeg').children].forEach(function(b){ b.classList.toggle('on', b.dataset.v===cloze1Mode); });
+  const isC1=(cloze1Mode==='cloze1');
+  $('#clozeLevel').style.display=isC1?'none':'flex';
+  $('#clozePassage').style.display=isC1?'none':'block';
+  $('#cloze1Stage').style.display=isC1?'block':'none';
+  $('#clzBankLabel').style.display=isC1?'none':'block';
+  $('#clzBank').style.display=isC1?'none':'flex';
+  $('#clzMeaning').style.display=isC1?'none':'block';
+  if(isC1){ $('#cSubmit').style.display='none'; $('#cNew').style.display='none'; }
+}
+$('#clozeModeSeg').addEventListener('click', function(ev){
+  const b=ev.target.closest('button'); if(!b || b.dataset.v===cloze1Mode) return;
+  cloze1Mode=b.dataset.v;
+  try{ localStorage.setItem('yt_cloze1mode', cloze1Mode); }catch(e){}
+  syncClozeSegs();
+  if(cloze1Mode==='cloze1'){ buildCloze1(); }
+  else { $('#cLevel').textContent=CLOZE_LEVELS[clozeLevel].label; renderCloze(); }
+});
+async function buildCloze1(){
+  const st=$('#cloze1Stage');
+  st.innerHTML='<div class="wCard tkWait">⏳ 正在出完形题…</div>';
+  try{
+    await ensureWordBank();
+    /* 完形需要长文：用 std 级（约 500 词）文章挖 20 空，词性档位沿用 kao */
+    const pOverride=buildPassage('std', LEVELS.std.plan);
+    const data=buildLocalClozeData('kao', 20, false, pOverride);
+    const wm=wordMap();
+    const inText=data.sents.map(function(s){ return s.en.toLowerCase(); }).join(' ');
+    data.blanks.forEach(function(b){
+      const pc=(b.m&&b.m.pos?b.m.pos:'x').charAt(0);
+      let pool=Object.keys(wm).filter(function(w){
+        return w.length>=4 && w!==b.word && !inText.includes(w) && (wm[w].pos||'x').charAt(0)===pc;
+      });
+      if(pool.length<3) pool=Object.keys(wm).filter(function(w){ return w.length>=4 && w!==b.word && !inText.includes(w); });
+      const dis=shuffle(pool).slice(0,3);
+      b.options=shuffle([b.word].concat(dis));
+      b.ans=b.options.indexOf(b.word);
+      b.ok=null;
+    });
+    c1=data;
+    c1.done=false; c1.right=0;
+    c1.answers=new Array(c1.blanks.length).fill(null);
+    renderCloze1();
+  }catch(e){
+    st.innerHTML='<div class="wCard">❌ 出题失败：'+gmEsc(e.message)+'</div>';
+  }
+}
+function renderCloze1(){
+  const st=$('#cloze1Stage'); const c=c1;
+  $('#cLevel').textContent='考研一 · 20 空';
+  let html='<div class="clozeCard">';
+  let fi=0;
+  c.passage.paras.forEach(function(pa){
+    html+='<p>';
+    pa.forEach(function(s){
+      let b=null;
+      c.blanks.forEach(function(bb){ if(bb.sent===fi) b=bb; });
+      let toks=s.en.split(' ');
+      if(b){
+        const k=c.blanks.indexOf(b);
+        let inner;
+        if(!c.done) inner='<b>'+(k+1)+'</b>';
+        else inner='<span class="'+(b.ok?'okT':'badT')+'">'+b.word+'</span>';
+        toks[b.ti]='<span class="clz1" data-k="'+k+'">'+inner+'</span>';
+      }
+      html+=toks.join(' ')+' ';
+      fi++;
+    });
+    html+='</p>';
+  });
+  html+='</div>';
+  c.blanks.forEach(function(b,k){
+    const sw=c.sents[b.sent].en.split(' '); sw[b.ti]='______';
+    html+='<div class="mkQ"><div class="mkQHead"><b>'+(k+1)+'.</b> '+gmEsc(sw.join(' '))+'</div><div class="mkOpts">';
+    b.options.forEach(function(o,oi){
+      let cls='qOpt';
+      if(c.done){ if(oi===b.ans) cls+=' right'; else if(c.answers[k]===oi) cls+=' wrong'; }
+      else if(c.answers[k]===oi) cls+=' sel';
+      html+='<button class="'+cls+'" data-k="'+k+'" data-oi="'+oi+'"><b>'+'ABCD'[oi]+'.</b> '+gmEsc(o)+'</button>';
+    });
+    html+='</div></div>';
+  });
+  html+='<div class="wBtns"><button class="wBtn reveal" id="c1Submit">'+(c.done?'✅ 已判分（答对 '+c.right+'/'+c.blanks.length+'）':'✓ 提交判分（每空 0.5 分，共 10 分）')+'</button></div>';
+  st.innerHTML=html;
+  st.querySelectorAll('.qOpt').forEach(function(btn){
+    btn.onclick=function(){
+      if(c1.done) return;
+      const k=+btn.dataset.k, oi=+btn.dataset.oi;
+      c1.answers[k]=oi;
+      st.querySelectorAll('.qOpt[data-k="'+k+'"]').forEach(function(x){ x.classList.toggle('sel', +x.dataset.oi===oi); });
+    };
+  });
+  document.getElementById('c1Submit').onclick=gradeCloze1;
+}
+function gradeCloze1(){
+  if(!c1 || c1.done) return;
+  c1.done=true; let right=0;
+  c1.blanks.forEach(function(b,k){
+    b.ok=c1.answers[k]===b.ans;
+    if(b.ok) right++;
+    else addWrong({type:'完形', prompt:'完形填空 · 第'+(k+1)+'空', body:c1.sents[b.sent].en,
+                   options:b.options, ans:b.ans, yourIdx:c1.answers[k],
+                   your:(c1.answers[k]!=null)?b.options[c1.answers[k]]:null, title:c1.passage.titleEn});
+  });
+  c1.right=right;
+  renderCloze1();
+  renderPanel();
+  showToast('完形判分：答对 '+right+'/'+c1.blanks.length+'（每空 0.5 分，共 '+Math.round(right*0.5)+' 分）');
+}

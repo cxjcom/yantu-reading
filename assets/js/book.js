@@ -514,6 +514,18 @@
       while(b2 < text.length && isW(text[b2])) b2++;
       const word = text.slice(a2, b2).toLowerCase();
       if(word && word.length >= 2 && /^[a-z][a-z'’-]*$/.test(word)){
+        /* 生词自动收集：同一词查 ≥2 次自动加入背词（不污染一次性好奇的查词） */
+        try{
+          const lk=JSON.parse(localStorage.getItem('yt_lookup')||'{}');
+          lk[word]=(lk[word]||0)+1;
+          const ks=Object.keys(lk);
+          if(ks.length>200) delete lk[ks.sort()[0]];
+          localStorage.setItem('yt_lookup', JSON.stringify(lk));
+          if(lk[word]>=2 && typeof markWord==='function'){
+            const wst=getWordState();
+            if(!wst[word]){ markWord(word,'u'); showToast('🔁 「'+word+'」查了 '+lk[word]+' 次，已自动加入背词'); }
+          }
+        }catch(err){}
         const found = lookupWord(word);
         if(found){
           e.preventDefault(); e.stopPropagation();

@@ -1212,3 +1212,50 @@ body:has(#splash){overflow:hidden;}
   .wrScore b{font-size:36px;}
   .mkL{min-width:34px; height:38px;}
 }
+
+/* =====================================================
+   翻译训练 / 考研完形 / 每日目标
+   ===================================================== */
+#trans{display:none;}
+.trHL{
+  background:rgba(181,56,47,.16); border-bottom:2.5px solid var(--cinnabar);
+  padding:0 3px; border-radius:3px 3px 0 0; font-weight:700;
+}
+.trQ{display:flex; gap:10px; margin:10px 0;}
+.trNo{
+  flex-shrink:0; width:30px; height:30px; border-radius:8px;
+  background:var(--cinnabar); color:#fbf6ea;
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--serif); font-weight:700; font-size:15px;
+}
+.trBody{flex:1;}
+.trSent{font-family:var(--serif); font-size:14.5px; line-height:1.9; color:var(--ink); margin-bottom:8px;}
+.trInput{font-family:var(--sans) !important;}
+.trRes{background:var(--paper-2); border-radius:8px; padding:10px 12px; margin:8px 0; font-size:13.5px;}
+.trResHead{display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;}
+.trResHead b{font-family:var(--serif); color:var(--cinnabar);}
+.trResHead .g{color:var(--ok); font-weight:700;}
+.trResHead .y{color:var(--gold); font-weight:700;}
+.trResHead .r{color:var(--bad); font-weight:700;}
+.trComment{color:var(--ink); line-height:1.8;}
+/* 完形（考研一） */
+.clz1{display:inline-block; min-width:40px; text-align:center; border-bottom:2px solid var(--cinnabar); padding:0 4px; margin:0 2px; font-family:var(--serif);}
+.okT{color:var(--ok); font-weight:700;}
+.badT{color:var(--bad); font-weight:700;}
+/* 每日目标 */
+.glCard{
+  background:var(--paper); border:1px solid var(--line); border-radius:6px 16px 6px 16px;
+  padding:14px 18px 12px; box-shadow:var(--shadow-sm); margin-bottom:14px;
+}
+.glCard.glDone{border-color:var(--ok);}
+.glHead{font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;}
+.glHead .glDone2{color:var(--ok); font-size:13px;}
+.glHead .glTodo{color:var(--muted); font-size:12.5px; font-weight:400;}
+.glSet{display:flex; gap:8px; margin-top:10px; align-items:center; font-size:12px; color:var(--muted); flex-wrap:wrap;}
+.glBtn{
+  background:var(--paper-2); border:1px solid var(--line-strong); border-radius:6px;
+  padding:4px 10px; font-size:12px; color:var(--ink); cursor:pointer; font-family:inherit;
+}
+.glBtn:hover{background:var(--paper);}
+.glBtn.on{border-color:var(--cinnabar); color:var(--cinnabar); background:rgba(181,56,47,.08);}
+.glCard .wBtn.slim{margin-top:10px;}
