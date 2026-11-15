@@ -312,7 +312,59 @@
       return r;
     };
   }
-  hook('renderPassage', () => { S.pi = 0; refresh(); });
+  /* 难度校验报告：用 WORD_BANK（22295 词，每词带级别标签）核对生成文章的词汇分布。
+     分级依据官方大纲词汇量：四级 ≈4500 / 六级 ≈6000 / 考研 ≈5500。 */
+  let __lvlIdx = null;
+  function levelIndex(){
+    if (__lvlIdx) return __lvlIdx;
+    const idx = new Map();
+    const order = {cet4:0, cet6:1, ky:2, beyond:3};
+    WORD_BANK.forEach(function(entry){
+      const tags = String(entry[5]||'');
+      let lvl = 'beyond';
+      if (/四级|高考/.test(tags)) lvl = 'cet4';
+      else if (/六级/.test(tags)) lvl = 'cet6';
+      else if (/考研/.test(tags)) lvl = 'ky';
+      const w = String(entry[0]||'').toLowerCase();
+      if (!idx.has(w) || order[lvl] < order[idx.get(w)]) idx.set(w, lvl);
+    });
+    __lvlIdx = idx; return idx;
+  }
+  function difficultyReport(p){
+    const idx = levelIndex();
+    const tokens = p.paras.flat().map(s=>s.en).join(' ').toLowerCase()
+      .replace(/[^a-z'\- ]+/g,' ').split(/\s+/).filter(Boolean);
+    const cnt = {cet4:0, cet6:0, ky:0, beyond:0, unknown:0};
+    tokens.forEach(function(t){ const l = idx.get(t); if(l) cnt[l]++; else cnt.unknown++; });
+    const sentCount = p.paras.flat().length;
+    const known = tokens.length - cnt.unknown;
+    const pct = (x) => known ? Math.round(x/known*100) : 0;
+    return {
+      total: tokens.length,
+      wps: Math.round(tokens.length / Math.max(1, sentCount)),
+      cet4: pct(cnt.cet4), cet6: pct(cnt.cet6), ky: pct(cnt.ky), beyond: pct(cnt.beyond),
+      unknownN: cnt.unknown
+    };
+  }
+  hook('renderPassage', function(){
+    S.pi = 0; refresh();
+    try{
+      if (typeof curPassage !== 'undefined' && curPassage && curPassage.paras){
+        const rep = difficultyReport(curPassage);
+        const mc = document.getElementById('metaChips');
+        if (mc){
+          const chip = document.createElement('span');
+          chip.className = 'metaDiff';
+          chip.title = '词汇分布按 WORD_BANK 级别标签统计（已知词归一）';
+          chip.textContent = '📊 四级内词汇 ' + rep.cet4 + '% · 超纲 ' + rep.beyond + '%';
+          mc.appendChild(chip);
+        }
+        console.log('[难度校验] 《' + (curPassage.titleEn||'') + '》 总词数 ' + rep.total +
+          ' · 平均句长 ' + rep.wps + ' 词 · 词汇分布（已知词归一）：四级内 ' + rep.cet4 + '% / 六级 ' +
+          rep.cet6 + '% / 考研 ' + rep.ky + '% / 超纲 ' + rep.beyond + '%');
+      }
+    }catch(e){}
+  });
   hook('applyMode', () => { refresh(); });
   hook('showReader', () => { refresh(); });
 
@@ -328,4 +380,5 @@
   }
 
   window.Book = { turn, refresh, setMode, state: S };
+  window.__ytDifficultyReport = difficultyReport;   /* 难度校验报告（可外部调用） */
 })();

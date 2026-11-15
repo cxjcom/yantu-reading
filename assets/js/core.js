@@ -943,15 +943,19 @@ function maybeExtend(s, p, usedTails){
 }
 
 /* 四档难度：四级 → 六级 → 考研标准 → 考研强化（paras 为段落分块，数据句并入相邻段） */
+/* 难度计划（2026-11-15 按官方考试大纲校准）：
+   四级仔细阅读 300-350 词/篇 → 计划 20 句 ≈ 340 词、5-6 段
+   六级仔细阅读 400-450 词/篇 → 计划 25 句 ≈ 430-460 词、6-7 段
+   考研一 Part A ≈400 词/篇（4 篇 1600 词）→ 计划 27-30 句 ≈ 400-520 词、7-8 段（练习留 5% 余量） */
 const LEVELS = {
   cet4:{dmax:1, hard:false, simpleRatio:1,    tailP:0.15,
-        paras:[['intro',4],['bg',2],['develop',4],['develop',4],['data',1],['debate',5],['close',3]]},
+        paras:[['intro',3],['bg',2],['develop',4],['develop',3],['data',1],['debate',4],['data',1],['close',2]]},
   cet6:{dmax:2, hard:false, simpleRatio:0.75, tailP:0.3,
-        paras:[['intro',4],['bg',3],['develop',4],['develop',4],['data',2],['develop',3],['debate',4],['debate',2],['close',3]]},
+        paras:[['intro',3],['bg',3],['develop',4],['develop',3],['data',2],['develop',3],['debate',4],['data',1],['close',2]]},
   std: {dmax:2, hard:false, simpleRatio:0.6,  tailP:0.45,
-        paras:[['intro',4],['bg',3],['develop',4],['develop',3],['data',2],['develop',4],['develop',3],['debate',5],['data',1],['debate',3],['close',3]]},
+        paras:[['intro',3],['bg',2],['develop',4],['develop',3],['data',2],['develop',3],['debate',4],['data',1],['debate',3],['close',2]]},
   plus:{dmax:2, hard:true,  simpleRatio:0.4,  tailP:0.45,
-        paras:[['intro',4],['bg',3],['develop',5],['data',2],['develop',4],['data',1],['develop',4],['debate',5],['data',1],['debate',3],['close',4]]}
+        paras:[['intro',3],['bg',2],['develop',5],['data',1],['develop',4],['data',1],['develop',3],['debate',5],['data',1],['debate',3],['close',2]]}
 };
 /* 按难度选句型：四级只用简单句(d=1)；六级简单句优先；强化难句优先 */
 function pickTemplates(pool, n, cfg, used){
@@ -1402,16 +1406,21 @@ async function aiBuildReading(){
      考研标准 560+ 词 8 段+（考研词汇）、考研强化 620+ 词 8 段+。
      AI 产出不足即重试，仍不足则回落本地引擎（本地永远达标）。 */
   const diffNow=(typeof curDiff!=='undefined'&&curDiff)?curDiff:'std';
+  /* 对齐官方大纲（2026-11-15 校准）：
+     四级仔细阅读 300-350 词/篇（cet.neea.edu.cn 大纲）→ AI 目标 320-360 词、5-6 段
+     六级仔细阅读 400-450 词/篇 → AI 目标 420-460 词、6-7 段
+     考研一 Part A ≈400 词/篇（4 篇 1600 词，研招网）→ AI 目标 400-480 词、6-8 段
+     考研强化：练习留 10% 余量 → 440-520 词、7-8 段 */
   const SPEC={
-    cet4:{minW:380, minP:6, pTxt:'6-8个自然段', wTxt:'380-480词',
-          lvl:'大学英语四级（CET-4）难度：词汇控制在四级大纲范围内，以常用词和常见搭配为主，句式以简单句、并列句和常见从句为主，不使用生僻学术词'},
-    cet6:{minW:460, minP:7, pTxt:'7-8个自然段', wTxt:'460-580词',
-          lvl:'大学英语六级（CET-6）难度：使用六级核心词汇与常见学术表达，长难句适度（1-2重从句），可少量超纲词'},
-    std: {minW:560, minP:8, pTxt:'8-9个自然段', wTxt:'560-700词',
-          lvl:'考研英语（一）难度：学术词汇丰富，多重从句嵌套的长难句，分词结构、插入语、倒装等考研典型句式'},
-    plus:{minW:620, minP:8, pTxt:'8-10个自然段', wTxt:'620-780词',
+    cet4:{minW:320, minP:5, pTxt:'5-6个自然段', wTxt:'320-360词',
+          lvl:'大学英语四级（CET-4）难度：词汇控制在四级大纲（约4500词）范围内，以常用词和常见搭配为主，句式以简单句、并列句和常见从句为主，不使用生僻学术词'},
+    cet6:{minW:420, minP:6, pTxt:'6-7个自然段', wTxt:'420-460词',
+          lvl:'大学英语六级（CET-6）难度：使用六级核心词汇（约6000词范围）与常见学术表达，长难句适度（1-2重从句）'},
+    std: {minW:400, minP:6, pTxt:'6-8个自然段', wTxt:'400-480词',
+          lvl:'考研英语（一）难度：大纲5500词范围内的学术词汇，多重从句嵌套的长难句，分词结构、插入语、倒装等考研典型句式'},
+    plus:{minW:440, minP:7, pTxt:'7-8个自然段', wTxt:'440-520词',
           lvl:'考研强化难度：更高密度的长难句、低频学术词与抽象概念，句式转换灵活隐晦'}
-  }[diffNow]||{minW:560, minP:8, pTxt:'8-9个自然段', wTxt:'560-700词', lvl:'考研英语（一）难度：学术词汇丰富，长难句'};
+  }[diffNow]||{minW:400, minP:6, pTxt:'6-8个自然段', wTxt:'400-480词', lvl:'考研英语（一）难度：学术词汇丰富，长难句'};
   const MINW=SPEC.minW, MINP=SPEC.minP;
   const sys='你是考研英语命题专家。只输出严格JSON对象，禁止输出任何解释、前言或markdown代码块标记。';
   const base='随机生成一篇考研英语阅读理解文章并配套命题。要求：主题随机（科技/生态/社会/心理/经济/教育/医疗等），'+SPEC.pTxt+'，全文'+SPEC.wTxt+'（硬性标准：段数少于'+MINP+'段或总词数低于'+MINW+'词视为无效输出，将被判不合格；每段至少4-6句、每句15-30词，篇幅宁多勿少）；词汇与句式难度：'+SPEC.lvl+'（词汇难度必须与考试层级严格匹配，不得超纲或降级）；每段给准确中文翻译；另从文中选10-14个与该难度匹配的高频词给中文释义。'+
@@ -1449,14 +1458,17 @@ async function aiBuildReading(){
 }
 async function aiBuildCloze(){
   const avoid=aiHist('cloze');
-  /* 真题标准：四六级选词填空短文 225-280 词、10 空。下限 220 词；词汇难度匹配层级，不足即重试/回落本地。 */
-  const MINW=220;
+  /* 真题标准（官方大纲）：四级选词填空 200-250 词、六级 250-300 词、10 空。
+     分档下限：四级 200 / 六级 250 / 考研 240；词汇难度匹配层级，不足即重试/回落本地。 */
   const lvNow=(typeof clozeLevel!=='undefined'&&clozeLevel)?clozeLevel:'cet4';
-  const LVW={cet4:'大学英语四级（CET-4）难度：词汇限于四级大纲范围，句式平实',
-             cet6:'大学英语六级（CET-6）难度：六级核心词汇、常见学术表达',
-             kao:'考研难度：学术词汇、多重从句嵌套的长难句'}[lvNow]||'大学英语四级难度';
+  const CLOZE_SPEC={
+    cet4:{minW:200, wTxt:'200-250词', lvl:'大学英语四级（CET-4）难度：词汇限于四级大纲（约4500词）范围，句式平实'},
+    cet6:{minW:250, wTxt:'250-300词', lvl:'大学英语六级（CET-6）难度：六级核心词汇（约6000词范围）、常见学术表达'},
+    kao: {minW:240, wTxt:'240-290词', lvl:'考研难度：大纲5500词范围内的学术词汇、多重从句嵌套的长难句'}
+  }[lvNow]||{minW:200, wTxt:'200-250词', lvl:'大学英语四级难度'};
+  const MINW=CLOZE_SPEC.minW;
   const sys='你是大学英语四六级与考研命题专家。只输出严格JSON对象，禁止输出任何解释或markdown代码块标记。';
-  const base='随机生成一篇"15选10"选词填空题：随机主题短文（科技/社会/生态/经济/教育/健康等），5-7个自然段，全文不少于'+MINW+'词（硬性标准：短文低于'+MINW+'词视为无效输出，将被判不合格；每段至少4句）；词汇与句式难度：'+LVW+'（与考试层级严格匹配）；文中按出现顺序挖10个空，用 __1__ 到 __10__ 标注；挖出的都是实词（名词/动词/形容词/副词），原词填回不需要变形；另给15个选项（10个正确答案+5个干扰项），每个给词性和中文释义，干扰项与正确词词性相近。';
+  const base='随机生成一篇"15选10"选词填空题：随机主题短文（科技/社会/生态/经济/教育/健康等），4-6个自然段，全文'+CLOZE_SPEC.wTxt+'（硬性标准：短文低于'+MINW+'词视为无效输出，将被判不合格；每段至少3句）；词汇与句式难度：'+CLOZE_SPEC.lvl+'（与考试层级严格匹配）；文中按出现顺序挖10个空，用 __1__ 到 __10__ 标注；挖出的都是实词（名词/动词/形容词/副词），原词填回不需要变形；另给15个选项（10个正确答案+5个干扰项），每个给词性和中文释义，干扰项与正确词词性相近。';
   const tail='输出JSON格式：{"title":"英文标题","titleCn":"中文标题","paras":[{"en":"含 __1__ 等空标记的英文段落","cn":"该段中文翻译"}],"options":[{"w":"单词(与文中形式完全一致)","pos":"n.","cn":"释义"} 共15个],"answers":["第1空正确单词",共10个按顺序]}。'+
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
@@ -1973,7 +1985,7 @@ async function buildClozePassage(){
     showToast('❌ AI 生成失败，已改用本地生成');
   }
   const cl=CLOZE_LEVELS[clozeLevel];
-  const p=buildPassage(cl.diff);   /* 使用与阅读相同的完整段落计划，文章更长 */
+  const p=buildPassage(cl.diff, cl.plan);   /* 按真题选词填空篇幅（四级 200-250 词 / 六级 250-300 词）出短文 */
   const sents=[]; p.paras.forEach(function(pa){ pa.forEach(function(s){ sents.push(s); }); });
   /* 全文词频（多次出现的词不挖空，避免泄答案） */
   const freq={};

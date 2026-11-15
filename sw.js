@@ -1,5 +1,5 @@
 /* 研途阅读 v3 离线缓存（PWA） */
-const CACHE = 'yt-pwa-v31';
+const CACHE = 'yt-pwa-v32';
 const ASSETS = [
   './',
   './index.html',
