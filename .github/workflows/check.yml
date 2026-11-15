@@ -1,0 +1,28 @@
+name: check
+on: [push]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: JS 语法检查
+        run: |
+          node --check assets/js/core.js
+          node --check assets/js/book.js
+          node --check assets/js/wordbank.js
+          node --check sw.js
+      - name: 页面结构 smoke 测试
+        run: |
+          node -e "
+          const fs = require('fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const required = ['id=\"genBtn\"', 'id=\"topicChips\"', 'id=\"reader\"', 'id=\"article\"', 'id=\"tabbar\"', 'id=\"longread\"'];
+          const missing = required.filter(x => !html.includes(x));
+          if (missing.length) { console.error('缺少元素:', missing); process.exit(1); }
+          const css = fs.readFileSync('assets/css/app.css', 'utf8');
+          if (!css.includes('.bookStage')) { console.error('CSS 缺少 bookStage'); process.exit(1); }
+          console.log('smoke ok');
+          "

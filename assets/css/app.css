@@ -676,3 +676,57 @@ audio.spRec{width:100%;margin-top:10px;}
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01s !important; transition-duration:.01s !important;}
 }
+
+/* ---------- 点词查词弹层 ---------- */
+.wordPop{
+  position:fixed;z-index:220;width:262px;
+  background:var(--paper);border:1px solid var(--line-strong);border-radius:6px 14px 6px 14px;
+  padding:14px;box-shadow:var(--shadow);color:var(--ink);
+  animation:wpIn .18s ease both;
+}
+@keyframes wpIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+.wpWord{font-family:Georgia,serif;font-size:20px;font-weight:700;color:var(--cinnabar);}
+.wpIpa{font-size:12.5px;color:var(--muted);margin-left:8px;font-weight:400;}
+.wpTags{margin-top:6px;font-size:10.5px;color:var(--muted);letter-spacing:.5px;}
+.wpMeaning{margin-top:8px;font-size:14px;line-height:1.6;}
+.wpEx{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.6;background:var(--paper-2);border-radius:6px;padding:7px 9px;}
+.wpBtns{display:flex;gap:8px;margin-top:10px;}
+.wpBtn{flex:1;border:1px solid var(--line-strong);background:var(--paper-2);color:var(--ink);
+  border-radius:8px;padding:7px 0;font-size:12.5px;cursor:pointer;font-weight:600;}
+.wpBtn:hover{border-color:var(--cinnabar);}
+
+/* ---------- 难度芯片 ---------- */
+.metaDiff{border-color:rgba(201,143,45,.45)!important;color:var(--gold)!important;}
+
+/* ---------- 连续打卡 ---------- */
+.streakChip{
+  font-size:11px;font-weight:700;color:var(--gold);
+  background:rgba(201,143,45,.12);border:1px solid rgba(201,143,45,.35);
+  border-radius:999px;padding:3px 10px;white-space:nowrap;
+}
+
+/* ---------- 长篇阅读 · 段落匹配 ---------- */
+.lrPara{margin:0 0 16px;position:relative;padding-left:40px;}
+.lrLetter{
+  position:absolute;left:0;top:2px;
+  width:24px;height:24px;display:flex;align-items:center;justify-content:center;
+  background:var(--paper-2);border:1px solid var(--line-strong);border-radius:6px;
+  font-family:var(--serif);font-size:13px;font-weight:700;color:var(--muted);
+}
+.lrPara.lrAnswer{background:rgba(74,124,70,.10);border-radius:10px;box-shadow:inset 0 0 0 1px rgba(74,124,70,.35);}
+.lrPara.lrAnswer .lrLetter{background:var(--ok);color:#fbf6ea;border-color:var(--ok);}
+.lrItem{
+  display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;
+  background:var(--paper);border:1px solid var(--line);border-radius:6px 12px 6px 12px;
+  padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow-sm);
+}
+.lrStmt{flex:1;min-width:240px;font-size:14.5px;line-height:1.7;}
+.lrStmt b{color:var(--cinnabar);font-family:var(--serif);margin-right:4px;}
+.lrSel{
+  border:1px solid var(--line-strong);background:var(--paper-2);color:var(--ink);
+  border-radius:8px;padding:7px 10px;font-size:14px;font-weight:700;cursor:pointer;
+  font-family:var(--serif);min-width:86px;
+}
+.lrSel:focus{outline:2px solid var(--accent);outline-offset:1px;}
+.lrOK{border-left:3px solid var(--ok)!important;}
+.lrNO{border-left:3px solid var(--bad)!important;}

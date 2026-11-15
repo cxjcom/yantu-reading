@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=15">
+<link rel="stylesheet" href="assets/css/app.css?v=17">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
@@ -120,6 +120,7 @@
           <button class="stationeryItem" id="wordBtn">🔤 每日背词<span>考研高频 · 随机复现</span></button>
           <button class="stationeryItem" id="clozeBtn">🧩 15选10 · 选词填空<span>真题题型 · 三级难度</span></button>
           <button class="stationeryItem" id="speakBtn">🎙️ 录音跟读<span>发音打分 · 逐句训练</span></button>
+          <button class="stationeryItem" id="longReadBtn">📄 长篇阅读 · 段落匹配<span>四六级 Section B 真题题型</span></button>
         </div>
         <div class="deskTip">
           · 内容由本地引擎随机组合生成，并避开你看过的文章，"想要就有"。<br>
@@ -151,6 +152,11 @@
         <div><b id="stWords">0</b><span>累计词数</span></div>
       </div>
     </div>
+    <div style="display:flex;gap:10px;margin-top:12px;">
+      <button class="secondary" id="btnExport" style="margin-top:0;">⬇️ 导出备份</button>
+      <button class="secondary" id="btnImport" style="margin-top:0;">⬆️ 导入恢复</button>
+      <input type="file" id="fileImport" accept=".json,application/json" style="display:none;">
+    </div>
     <button class="brushBtn slim" id="pwaInstallBtn">📲 安装到手机桌面</button>
     <p class="deskTip" id="pwaInstallHint" style="margin-top:10px;">安装后桌面出现独立图标，全屏运行、支持离线，像正常 App 一样使用。</p>
 
@@ -162,7 +168,7 @@
     <div id="histList"></div>
     <div id="histEmpty" class="empty">暂无浏览记录～<br>每次生成或打开的阅读都会自动记在这里</div>
 
-    <div class="inkLabel rowSplit"><span>错题本 <span class="inkHint" id="wrongCount"></span></span><button class="clearHist" id="clearWrong">🗑 清空</button></div>
+    <div class="inkLabel rowSplit"><span>错题本 <span class="inkHint" id="wrongCount"></span></span><span style="display:flex;gap:6px;"><button class="clearHist" id="redoWrong">🔁 重刷</button><button class="clearHist" id="clearWrong">🗑 清空</button></span></div>
     <div id="wrongList"></div>
     <div id="wrongEmpty" class="empty">错题本还是空的～<br>阅读页点「📝 做题」，答错的题会自动收进来</div>
   </section>
@@ -172,7 +178,14 @@
     <div class="sceneHead">
       <button class="inkBtn" id="wBack">‹</button>
       <div class="sceneTitle">每日背词</div>
+      <span class="streakChip" id="streakChip"></span>
       <div class="sceneCount" id="wCount">1 / 10</div>
+    </div>
+    <div class="seg" id="wordFilter" style="margin:0 2px 12px;">
+      <button data-wf="all" class="on">全部</button>
+      <button data-wf="cet4">四级词</button>
+      <button data-wf="cet6">六级词</button>
+      <button data-wf="ky">考研词</button>
     </div>
     <div class="wBarWrap"><div id="wBar"></div></div>
     <div class="wCard">
@@ -205,6 +218,7 @@
     <div class="sceneHead">
       <button class="inkBtn" id="qBack">‹</button>
       <div class="sceneTitle">阅读测试</div>
+      <button class="inkBtn" id="qModeBtn" style="min-width:auto;padding:0 10px;font-size:12px;font-family:var(--sans);" title="切换练习/考试模式">🎓 考试</button>
       <div class="sceneCount" id="qCount">1 / 5</div>
     </div>
     <div class="wBarWrap"><div id="qBar"></div></div>
@@ -238,6 +252,7 @@
       <div class="sceneTitle">录音跟读</div>
       <div class="sceneCount" id="spScene">☕ 咖啡店</div>
     </div>
+    <div id="spNoSR" class="empty" style="display:none;margin-bottom:14px;">当前浏览器不支持语音识别（iPhone 自带 Safari、微信内置浏览器等）。<br>仍可对照原文朗读练习；发音打分请使用 Chrome / Edge 浏览器。</div>
     <div class="spHeadRow">
       <span class="inkLabel inline" id="spTotal">尚未开始朗读</span>
     </div>
@@ -296,6 +311,27 @@
     </div>
   </section>
 
+  <!-- 长篇阅读 · 段落匹配（四六级 Section B） -->
+  <section id="longread" style="display:none;">
+    <div class="sceneHead">
+      <button class="inkBtn" id="lrBack">‹</button>
+      <div class="sceneTitle">长篇阅读 · 段落匹配</div>
+      <div class="sceneCount" id="lrLevel">四级</div>
+    </div>
+    <div class="seg" id="lrLevelSeg" style="margin:2px 2px 14px;">
+      <button data-lv="cet4" class="on">四级</button>
+      <button data-lv="cet6">六级</button>
+    </div>
+    <div class="deskTip" style="margin:0 0 14px;">真题 Section B 题型：文后 10 个句子，请从段落中找出各自信息的出处。<span style="color:var(--cinnabar);">段首字母即段落编号</span>。</div>
+    <div class="clozeCard" id="lrPassage"></div>
+    <div class="inkLabel">题目 · 为每个句子选择其出处段落</div>
+    <div id="lrItems"></div>
+    <div class="wBtns">
+      <button class="wBtn reveal" id="lrSubmit">✓ 提交答案</button>
+      <button class="wBtn again" id="lrNew" style="display:none">🔁 换一篇</button>
+    </div>
+  </section>
+
   <div id="toast"></div>
 
   <!-- 阅读室（线装书） -->
@@ -318,6 +354,7 @@
       <span class="ttsCluster">
         <button class="inkBtn ttsPlayBtn" id="ttsPlay" title="朗读全文">▶</button>
         <button class="inkBtn" id="ttsStop" disabled="" title="停止">⏹</button>
+        <button class="inkBtn" id="ttsRate" title="朗读语速">1x</button>
         <span class="ttsStatus" id="ttsStatus"></span>
       </span>
     </div>
@@ -342,13 +379,13 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=15"></script>
-<script src="assets/js/book.js?v=15"></script>
+<script src="assets/js/core.js?v=17"></script>
+<script src="assets/js/book.js?v=17"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){
-  const SECS=['home','reader','profile','words','quiz','cloze','speak'];
-  const TITLES={home:'工作台',reader:'书房 · 阅读',profile:'我的书房',words:'每日背词',quiz:'阅读测试',cloze:'选词填空',speak:'跟读训练'};
+  const SECS=['home','reader','profile','words','quiz','cloze','speak','longread'];
+  const TITLES={home:'工作台',reader:'书房 · 阅读',profile:'我的书房',words:'每日背词',quiz:'阅读测试',cloze:'选词填空',speak:'跟读训练',longread:'长篇阅读'};
   const SHELF_OF={home:'shelfHome',words:'shelfWords',cloze:'shelfCloze',profile:'shelfMe',reader:'shelfRead',quiz:'shelfRead',speak:'shelfSpeak'};
   const $id=(i)=>document.getElementById(i);
 
@@ -393,6 +430,63 @@
     const d=new Date();
     const wd=['日','一','二','三','四','五','六'][d.getDay()];
     gd.textContent=d.getFullYear()+' 年 '+(d.getMonth()+1)+' 月 '+d.getDate()+' 日 · 星期'+wd+' · 照明考研方向';
+  }
+
+  /* 长篇阅读入口 + 难度级别切换 */
+  const lrBtn=document.getElementById('longReadBtn');
+  if(lrBtn) lrBtn.addEventListener('click', function(){ if(typeof showLongRead==='function') showLongRead(); });
+  const lrSeg=document.getElementById('lrLevelSeg');
+  if(lrSeg) lrSeg.addEventListener('click', function(ev){
+    const b=ev.target.closest('button'); if(!b) return;
+    [...lrSeg.children].forEach(function(x){ x.classList.toggle('on', x===b); });
+    if(typeof setLRLevel==='function') setLRLevel(b.dataset.lv);
+  });
+  const lrBackBtn=document.getElementById('lrBack');
+  if(lrBackBtn) lrBackBtn.addEventListener('click', function(){ if(typeof showHome==='function') showHome(); });
+
+  /* 背词级别筛选绑定（core 提供 bindWordFilter） */
+  if(typeof bindWordFilter==='function') bindWordFilter();
+
+  /* 数据备份：导出全部 yt_ 前缀的 localStorage / 导入恢复 */
+  const expBtn=document.getElementById('btnExport');
+  if(expBtn) expBtn.addEventListener('click', function(){
+    try{
+      const data={};
+      for(let i=0;i<localStorage.length;i++){
+        const k=localStorage.key(i);
+        if(k.indexOf('yt_')===0) data[k]=localStorage.getItem(k);
+      }
+      const blob=new Blob([JSON.stringify({app:'yantu-reading',time:new Date().toISOString(),data:data},null,2)],{type:'application/json'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='yantu-backup-'+new Date().toISOString().slice(0,10)+'.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      showToast('⬇️ 备份已导出（'+Object.keys(data).length+' 项）');
+    }catch(e){ showToast('导出失败：'+e.message); }
+  });
+  const impBtn=document.getElementById('btnImport');
+  const fileInput=document.getElementById('fileImport');
+  if(impBtn && fileInput){
+    impBtn.addEventListener('click', function(){ fileInput.click(); });
+    fileInput.addEventListener('change', function(){
+      const f=fileInput.files && fileInput.files[0];
+      if(!f) return;
+      const reader=new FileReader();
+      reader.onload=function(){
+        try{
+          const j=JSON.parse(reader.result);
+          const data=j.data||j;
+          let n=0;
+          Object.keys(data).forEach(function(k){
+            if(k.indexOf('yt_')===0 && typeof data[k]==='string'){ localStorage.setItem(k, data[k]); n++; }
+          });
+          showToast('✅ 已恢复 '+n+' 项数据，即将刷新页面');
+          setTimeout(function(){ location.reload(); }, 900);
+        }catch(e){ showToast('导入失败：文件格式不正确'); }
+      };
+      reader.readAsText(f);
+      fileInput.value='';
+    });
   }
 
   /* 启动时即从本地存储填充工作台统计（原版要进过书房才显示） */

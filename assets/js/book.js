@@ -193,6 +193,7 @@
       wrapEl.remove();
       updateInd();
       S.busy = false;
+      saveCur();
     };
     if (typeof wrapEl.animate === 'function'){
       try {
@@ -316,6 +317,7 @@
      分级依据官方大纲词汇量：四级 ≈4500 / 六级 ≈6000 / 考研 ≈5500。 */
   let __lvlIdx = null;
   function levelIndex(){
+    if (typeof WORD_BANK === 'undefined' || !WORD_BANK.length) return null;
     if (__lvlIdx) return __lvlIdx;
     const idx = new Map();
     const order = {cet4:0, cet6:1, ky:2, beyond:3};
@@ -332,6 +334,7 @@
   }
   function difficultyReport(p){
     const idx = levelIndex();
+    if (!idx) return null;
     const tokens = p.paras.flat().map(s=>s.en).join(' ').toLowerCase()
       .replace(/[^a-z'\- ]+/g,' ').split(/\s+/).filter(Boolean);
     const cnt = {cet4:0, cet6:0, ky:0, beyond:0, unknown:0};
@@ -350,7 +353,23 @@
     S.pi = 0; refresh();
     try{
       if (typeof curPassage !== 'undefined' && curPassage && curPassage.paras){
-        const rep = difficultyReport(curPassage);
+        /* 恢复该篇上次阅读位置（同模式下生效） */
+        setTimeout(function(){
+          try{
+            const pos = loadPos()[curPassage.id];
+            if(!pos) return;
+            if(S.mode === 'flip' && pos.mode === 'flip' && typeof pos.pi === 'number'){
+              if(pos.pi > 0 && pos.pi < Math.max(1, S.pages.length)){
+                S.pi = pos.pi; showPage(S.pi); updateInd();
+              }
+            } else if(S.mode === 'scroll' && pos.mode === 'scroll' && pos.y){
+              window.scrollTo(0, pos.y);
+            }
+          }catch(e){}
+        }, 120);
+        let rep = difficultyReport(curPassage);
+        if (!rep && window.ensureWordBank) window.ensureWordBank();   /* 词库未就绪：后台加载，下次渲染出报告 */
+        if (!rep) return;
         const mc = document.getElementById('metaChips');
         if (mc){
           const chip = document.createElement('span');
@@ -378,6 +397,124 @@
   } else {
     init();
   }
+
+  /* ---------- 点词查词：点击文章单词 → 释义弹层（数据来自 WORD_BANK） ---------- */
+  let __wordPop = null;
+  function closeWordPop(){
+    if(__wordPop){ __wordPop.remove(); __wordPop = null; }
+  }
+  function lookupWord(w){
+    const tries = [w];
+    if(w.endsWith('ies')) tries.push(w.slice(0,-3)+'y');
+    if(w.endsWith('es'))  tries.push(w.slice(0,-2));
+    if(w.endsWith('s'))   tries.push(w.slice(0,-1));
+    if(w.endsWith('ing')){ tries.push(w.slice(0,-3), w.slice(0,-3)+'e'); }
+    if(w.endsWith('ed')) { tries.push(w.slice(0,-2), w.slice(0,-1)); }
+    for(const t of tries){
+      const hit = WORD_BANK.find(function(x){ return x[0].toLowerCase()===t; });
+      if(hit) return hit;
+    }
+    return null;
+  }
+  function showWordPopup(x, y, entry){
+    closeWordPop();
+    const pop = document.createElement('div'); pop.className = 'wordPop';
+    const tags = String(entry[5]||'');
+    const ipa = entry[1];
+    pop.innerHTML =
+      '<div class="wpWord">' + entry[0] + (ipa ? '<span class="wpIpa">' + ipa + '</span>' : '') + '</div>' +
+      (tags ? '<div class="wpTags">' + tags + '</div>' : '') +
+      '<div class="wpMeaning">' + entry[2] + '</div>' +
+      (entry[3] ? '<div class="wpEx">' + entry[3] + '<br>' + entry[4] + '</div>' : '') +
+      '<div class="wpBtns">' +
+      '<button class="wpBtn" data-act="speak">🔊 发音</button>' +
+      '<button class="wpBtn" data-act="add">＋ 加入背词</button></div>';
+    document.body.appendChild(pop);
+    const rect = pop.getBoundingClientRect();
+    let px = Math.min(window.innerWidth - rect.width - 12, Math.max(10, x + 10));
+    let py = y + 18;
+    if(py + rect.height > window.innerHeight - 10) py = Math.max(10, y - rect.height - 14);
+    pop.style.left = px + 'px'; pop.style.top = py + 'px';
+    pop.querySelector('[data-act="speak"]').onclick = function(ev){
+      ev.stopPropagation();
+      try{
+        const u = new SpeechSynthesisUtterance(entry[0]);
+        u.lang = 'en-US';
+        speechSynthesis.cancel(); speechSynthesis.speak(u);
+      }catch(err){}
+    };
+    pop.querySelector('[data-act="add"]').onclick = function(ev){
+      ev.stopPropagation();
+      const w = entry[0].toLowerCase();
+      let added = false;
+      try{
+        const st = getWordState();
+        if(!st[w]){ st[w] = {s:'u', t:Date.now()}; saveWordState(st); added = true; }
+      }catch(err){}
+      this.textContent = added ? '✓ 已加入背词' : '已在背词中';
+      showToast(added ? ('已加入背词：' + w) : '该词已在背词列表');
+    };
+    __wordPop = pop;
+    setTimeout(function(){
+      document.addEventListener('click', function closer(ev){
+        if(!pop.contains(ev.target)){ pop.remove(); document.removeEventListener('click', closer); __wordPop = null; }
+      });
+    }, 30);
+  }
+  function bindWordLookup(){
+    const a = document.getElementById('article');
+    if(!a) return;
+    a.addEventListener('click', function(e){
+      /* 朗读进行中：保留原有点段落跳转行为 */
+      if(typeof tts !== 'undefined' && tts.playing) return;
+      if(typeof WORD_BANK === 'undefined' || !WORD_BANK.length) return;
+      const rng = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+      if(!rng || !rng.startContainer || rng.startContainer.nodeType !== 3) return;
+      const text = rng.startContainer.textContent, off = rng.startOffset;
+      const isW = (ch) => /[A-Za-z'’-]/.test(ch);
+      let a2 = off, b2 = off;
+      while(a2 > 0 && isW(text[a2-1])) a2--;
+      while(b2 < text.length && isW(text[b2])) b2++;
+      const word = text.slice(a2, b2).toLowerCase();
+      if(!word || word.length < 2 || !/^[a-z][a-z'’-]*$/.test(word)) return;
+      const entry = lookupWord(word);
+      if(!entry) return;                                    /* 未收录：维持原有段落点击行为 */
+      e.preventDefault(); e.stopPropagation();
+      showWordPopup(e.clientX, e.clientY, entry);
+    }, true);
+  }
+  bindWordLookup();
+
+  /* ---------- 阅读位置记忆：每篇文章记住页码（翻页）/滚动位置（长卷） ---------- */
+  function loadPos(){
+    try{ return JSON.parse(localStorage.getItem('yt_readpos')||'{}'); }catch(e){ return {}; }
+  }
+  function savePos(id, data){
+    if(!id) return;
+    try{
+      const all = loadPos();
+      all[id] = Object.assign({ts: Date.now()}, data);
+      const keys = Object.keys(all).sort(function(a,b){ return all[b].ts - all[a].ts; });
+      const trimmed = {};
+      keys.slice(0, 50).forEach(function(k){ trimmed[k] = all[k]; });
+      localStorage.setItem('yt_readpos', JSON.stringify(trimmed));
+    }catch(e){}
+  }
+  function saveCur(){
+    try{
+      if(typeof curPassage === 'undefined' || !curPassage || !curPassage.id) return;
+      if(!readerVisible()) return;
+      if(S.mode === 'flip'){ savePos(curPassage.id, {mode:'flip', pi:S.pi}); }
+      else { savePos(curPassage.id, {mode:'scroll', y:window.scrollY||0}); }
+    }catch(e){}
+  }
+  let __scrollSave = null;
+  window.addEventListener('scroll', function(){
+    clearTimeout(__scrollSave);
+    __scrollSave = setTimeout(function(){
+      if(S.mode === 'scroll' && readerVisible()) saveCur();
+    }, 500);
+  }, {passive:true});
 
   window.Book = { turn, refresh, setMode, state: S };
   window.__ytDifficultyReport = difficultyReport;   /* 难度校验报告（可外部调用） */
