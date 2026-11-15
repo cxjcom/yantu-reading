@@ -4,7 +4,7 @@
    - 导航请求 network-first（保证 HTML 永远最新，离线才回落缓存）
    - 带 ? 的请求一律直连网络（开发期 ?v=N 强制刷新）
    - 运行时缓存仅限同源、无查询参数的 GET，上限 80 条（越旧越先淘汰） */
-const CACHE = 'yt-pwa-v35';
+const CACHE = 'yt-pwa-v53';
 const PRECACHE = [
   './',
   './index.html',

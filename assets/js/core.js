@@ -1266,6 +1266,7 @@ function renderPassage(p){
   $('#vocabBox').open=false;
   applyMode();
   updateFavBtn();
+  try{ sessionStorage.setItem('yt_cur', JSON.stringify(p)); }catch(e){}
   window.scrollTo(0,0);
 }
 
@@ -3144,6 +3145,9 @@ $('#themeBtn').onclick=()=>{
   const next=order[(order.indexOf(ytThemeMode())+1)%3];
   try{ localStorage.setItem('yt_theme', next); }catch(e){}
   applyTheme(); saveSettings();
+  showToast(next==='auto'
+    ? ('已跟随系统（当前'+(resolveTheme()==='dark'?'深色':'浅色')+'）')
+    : (next==='dark' ? '已切换深色模式' : '已切换浅色模式'));
 };
 try{
   if(window.matchMedia){
@@ -3269,6 +3273,20 @@ updateMeBtn();
 [...$('#diffSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.v===curDiff));
 applyMode();
 validateAll();
+
+/* 刷新恢复：地址栏 #read 且 sessionStorage 有当前文章 → 回到阅读页 */
+try{
+  if(location.hash==='#read'){
+    const saved=sessionStorage.getItem('yt_cur');
+    if(saved){
+      const p=JSON.parse(saved);
+      if(p && p.paras && p.paras.length){
+        renderPassage(p); showReader();
+        window.__ytRestoreId = p.id;   /* 供 book.js 载入后恢复上次阅读位置 */
+      }
+    }
+  }
+}catch(e){}
 
 /* ---------- 长篇阅读 · 段落匹配（四六级真题 Section B 题型） ---------- */
 let lrState=null;

@@ -81,8 +81,20 @@
     const next = document.getElementById('pgNext');
     if (prev) prev.style.visibility = (S.pi <= 0) ? 'hidden' : 'visible';
     if (next) next.style.visibility = (S.pi >= S.pages.length - 1) ? 'hidden' : 'visible';
+    const prog = document.getElementById('readProgBar');
+    if (prog) prog.style.width = (cur / total * 100) + '%';
   }
 
+  /* ---------- 阅读位置恢复（确定性）：文章渲染时读入目标页码，每次分页无条件应用 ---------- */
+  function queueRestore(id){
+    try{
+      const pos = loadPos()[id];
+      if(pos && pos.mode === S.mode){
+        if(S.mode === 'flip' && typeof pos.pi === 'number'){ S.restorePi = pos.pi; S.restoreActive = true; }
+        else if(S.mode === 'scroll' && pos.y){ S.restoreY = pos.y; S.restoreActive = true; }
+      }
+    }catch(e){}
+  }
   /* ---------- 分页 ---------- */
   function elH(el){
     const r = el.getBoundingClientRect();
@@ -100,6 +112,7 @@
       updateInd();
       return;
     }
+    if(!__layoutReady){ showAll(); updateInd(); return; }   /* 字体未就绪：暂不分页，就绪后一次成型 */
     /* 纸张高度：以 scrollTop=0 的阅读起始位置为准（文档坐标）
        窄屏时书架是底部 dock，需要扣除其高度 */
     showAll();
@@ -142,6 +155,10 @@
     S.pages = pages.length ? pages : [{ type:'paras', els:[] }];
     if (S.pi >= S.pages.length) S.pi = S.pages.length - 1;
     if (S.pi < 0) S.pi = 0;
+    if(S.restoreActive){
+      if(S.restorePi != null){ S.pi = Math.min(S.restorePi, S.pages.length - 1); }
+      S.restoreActive = false;   /* 只应用一次；之后以用户翻页为准 */
+    }
     showPage(S.pi);
   }
 
@@ -193,6 +210,7 @@
       wrapEl.remove();
       updateInd();
       S.busy = false;
+      S.restoreActive = false;
       saveCur();
     };
     if (typeof wrapEl.animate === 'function'){
@@ -299,6 +317,10 @@
     refresh();
   }
 
+  let __layoutReady = !!(document.fonts && document.fonts.status === 'loaded');
+  if(document.fonts && document.fonts.ready){
+    document.fonts.ready.then(function(){ __layoutReady = true; setTimeout(refresh, 60); }).catch(function(){});
+  }
   function refresh(){
     requestAnimationFrame(paginate);
   }
@@ -353,20 +375,8 @@
     S.pi = 0; refresh();
     try{
       if (typeof curPassage !== 'undefined' && curPassage && curPassage.paras){
-        /* 恢复该篇上次阅读位置（同模式下生效） */
-        setTimeout(function(){
-          try{
-            const pos = loadPos()[curPassage.id];
-            if(!pos) return;
-            if(S.mode === 'flip' && pos.mode === 'flip' && typeof pos.pi === 'number'){
-              if(pos.pi > 0 && pos.pi < Math.max(1, S.pages.length)){
-                S.pi = pos.pi; showPage(S.pi); updateInd();
-              }
-            } else if(S.mode === 'scroll' && pos.mode === 'scroll' && pos.y){
-              window.scrollTo(0, pos.y);
-            }
-          }catch(e){}
-        }, 120);
+        /* 恢复该篇上次阅读位置：排队待分页完成后应用（见 paginate 尾部） */
+        if(curPassage.id) queueRestore(curPassage.id);
         let rep = difficultyReport(curPassage);
         if (!rep && window.ensureWordBank) window.ensureWordBank();   /* 词库未就绪：后台加载，下次渲染出报告 */
         if (!rep) return;
@@ -404,25 +414,26 @@
     if(__wordPop){ __wordPop.remove(); __wordPop = null; }
   }
   function lookupWord(w){
-    const tries = [w];
-    if(w.endsWith('ies')) tries.push(w.slice(0,-3)+'y');
-    if(w.endsWith('es'))  tries.push(w.slice(0,-2));
-    if(w.endsWith('s'))   tries.push(w.slice(0,-1));
-    if(w.endsWith('ing')){ tries.push(w.slice(0,-3), w.slice(0,-3)+'e'); }
-    if(w.endsWith('ed')) { tries.push(w.slice(0,-2), w.slice(0,-1)); }
-    for(const t of tries){
+    const tries = [[w, w]];
+    if(w.endsWith('ies')) tries.push([w.slice(0,-3)+'y', w.slice(0,-3)]);
+    if(w.endsWith('es'))  tries.push([w.slice(0,-2), w.slice(0,-2)]);
+    if(w.endsWith('s'))   tries.push([w.slice(0,-1), w.slice(0,-1)]);
+    if(w.endsWith('ing')){ tries.push([w.slice(0,-3), ''], [w.slice(0,-3)+'e', '']); }
+    if(w.endsWith('ed')) { tries.push([w.slice(0,-2), ''], [w.slice(0,-1), '']); }
+    for(const [t, base] of tries){
       const hit = WORD_BANK.find(function(x){ return x[0].toLowerCase()===t; });
-      if(hit) return hit;
+      if(hit) return {entry: hit, base: base || t};
     }
     return null;
   }
-  function showWordPopup(x, y, entry){
+  function showWordPopup(x, y, entry, base){
     closeWordPop();
     const pop = document.createElement('div'); pop.className = 'wordPop';
     const tags = String(entry[5]||'');
     const ipa = entry[1];
     pop.innerHTML =
       '<div class="wpWord">' + entry[0] + (ipa ? '<span class="wpIpa">' + ipa + '</span>' : '') + '</div>' +
+      (base && base !== entry[0].toLowerCase() ? '<div class="wpBase">原型词：' + base + '</div>' : '') +
       (tags ? '<div class="wpTags">' + tags + '</div>' : '') +
       '<div class="wpMeaning">' + entry[2] + '</div>' +
       (entry[3] ? '<div class="wpEx">' + entry[3] + '<br>' + entry[4] + '</div>' : '') +
@@ -467,6 +478,17 @@
     a.addEventListener('click', function(e){
       /* 朗读进行中：保留原有点段落跳转行为 */
       if(typeof tts !== 'undefined' && tts.playing) return;
+      /* 翻页模式：书页外缘 12% 点击 = 翻页（真书空间交互，优先于点词） */
+      if (S.mode === 'flip' && readerVisible() && !S.busy){
+        const rect0 = document.getElementById('bookStage').getBoundingClientRect();
+        const rel0 = (e.clientX - rect0.left) / rect0.width;
+        const onCtl = e.target.closest('button, select, input, a, summary');
+        if (!onCtl && (rel0 < 0.12 || rel0 > 0.88)){
+          e.preventDefault(); e.stopPropagation();
+          turn(rel0 > 0.5 ? 1 : -1);
+          return;
+        }
+      }
       if(typeof WORD_BANK === 'undefined' || !WORD_BANK.length) return;
       const rng = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
       if(!rng || !rng.startContainer || rng.startContainer.nodeType !== 3) return;
@@ -476,14 +498,38 @@
       while(a2 > 0 && isW(text[a2-1])) a2--;
       while(b2 < text.length && isW(text[b2])) b2++;
       const word = text.slice(a2, b2).toLowerCase();
-      if(!word || word.length < 2 || !/^[a-z][a-z'’-]*$/.test(word)) return;
-      const entry = lookupWord(word);
-      if(!entry) return;                                    /* 未收录：维持原有段落点击行为 */
-      e.preventDefault(); e.stopPropagation();
-      showWordPopup(e.clientX, e.clientY, entry);
+      if(word && word.length >= 2 && /^[a-z][a-z'’-]*$/.test(word)){
+        const found = lookupWord(word);
+        if(found){
+          e.preventDefault(); e.stopPropagation();
+          showWordPopup(e.clientX, e.clientY, found.entry, found.base);
+          return;
+        }
+      }
+      /* 其余点击：维持原有段落跳读行为 */
     }, true);
   }
   bindWordLookup();
+
+  /* 字体加载完成后重排一次：避免字体切换导致分页/恢复错位 */
+  if(document.fonts && document.fonts.ready){
+    document.fonts.ready.then(function(){ setTimeout(refresh, 60); }).catch(function(){});
+  }
+
+  /* ---------- 桌面滚轮翻页（翻页模式） ---------- */
+  let __wheelLock = 0;
+  const stEl = document.getElementById('bookStage');
+  if (stEl){
+    stEl.addEventListener('wheel', function(e){
+      if (S.mode !== 'flip' || !readerVisible() || S.busy) return;
+      e.preventDefault();
+      const now = Date.now();
+      if (now - __wheelLock < 450) return;
+      if (Math.abs(e.deltaY) < 25) return;
+      __wheelLock = now;
+      turn(e.deltaY > 0 ? 1 : -1);
+    }, {passive:false});
+  }
 
   /* ---------- 阅读位置记忆：每篇文章记住页码（翻页）/滚动位置（长卷） ---------- */
   function loadPos(){
@@ -508,6 +554,15 @@
       else { savePos(curPassage.id, {mode:'scroll', y:window.scrollY||0}); }
     }catch(e){}
   }
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'hidden'){
+      /* 恢复待定期间：页面刚载入尚未读到保存位置，此时保存会用第 1 页覆盖真实进度 */
+      if(!(__pendingRestore && (typeof curPassage === 'undefined' || !curPassage || __pendingRestore.id === curPassage.id))) saveCur();
+    }
+  });
+  window.addEventListener('beforeunload', function(){
+    if(!(__pendingRestore && (typeof curPassage === 'undefined' || !curPassage || __pendingRestore.id === curPassage.id))) saveCur();
+  });
   let __scrollSave = null;
   window.addEventListener('scroll', function(){
     clearTimeout(__scrollSave);
@@ -515,6 +570,16 @@
       if(S.mode === 'scroll' && readerVisible()) saveCur();
     }, 500);
   }, {passive:true});
+
+  /* 刷新恢复：core 初始化先于本文件，补挂恢复意图 */
+  try{
+    const rid = window.__ytRestoreId;
+    if(rid && typeof curPassage !== 'undefined' && curPassage && curPassage.id === rid){
+      queueRestore(rid);
+      refresh();
+    }
+    window.__ytRestoreId = null;
+  }catch(e){}
 
   window.Book = { turn, refresh, setMode, state: S };
   window.__ytDifficultyReport = difficultyReport;   /* 难度校验报告（可外部调用） */
