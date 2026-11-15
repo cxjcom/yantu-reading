@@ -755,8 +755,10 @@ audio.spRec{width:100%;margin-top:10px;}
 body.flip-on .para{margin-bottom:26px;}
 
 /* =====================================================
-   开屏动画 ·「朱砂落墨」
-   墨滴坠落 → 涟漪晕开 → 题名逐字显影 → 印章盖下 → 墨化退场
+   开屏动画 ·「朱砂落墨 · 万家灯火」长版（约 7.2s）
+   夜幕垂帘(明月/星子/远山金线) → 墨滴落砚(闪光+墨花) →
+   城郭浮起·灯次第 → 雁阵掠月 → 题名逐字 → 印章盖下(印泥飞尘) →
+   尾句「每一盏灯下，都有人在赶路」 → 墨晕吞幕谢幕
    纯 CSS 播放（结尾 fill-forwards 自行隐藏，JS 只负责移除节点）；
    点击 / 滚轮 / 按键跳过；prefers-reduced-motion 直接关闭
    ===================================================== */
@@ -766,8 +768,8 @@ body.flip-on .para{margin-bottom:26px;}
     radial-gradient(1100px 640px at 50% 30%, #201a10, #14100b 62%, #0d0a06);
   overflow:hidden;
   cursor:pointer;
-  animation:spExit .65s cubic-bezier(.5,.05,.75,.4) 2.7s forwards,
-            spFree 0s linear 2.7s forwards;
+  animation:spExit .75s cubic-bezier(.5,.05,.75,.4) 6.45s forwards,
+            spFree 0s linear 6.45s forwards;
 }
 body:has(#splash){overflow:hidden;}
 @keyframes spExit{
@@ -784,20 +786,261 @@ body:has(#splash){overflow:hidden;}
 @media (prefers-reduced-motion:reduce){
   #splash{display:none;}
 }
-#splash::after{ /* 暗角 */
-  content:""; position:absolute; inset:0; pointer-events:none;
+#splash::after{ /* 暗角（压过舞台，低于墨幕） */
+  content:""; position:absolute; inset:0; z-index:40; pointer-events:none;
   background:radial-gradient(120% 90% at 50% 42%, transparent 55%, rgba(0,0,0,.55));
 }
 .spStage{
-  position:relative; width:100%; height:100%;
+  position:relative; z-index:7; width:100%; height:100%;
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  animation:spShake .3s ease 1.9s;
+  animation:spShake .3s ease 3.4s;
 }
 @keyframes spShake{
   0%,100%{transform:translate(0,0);}
   25%{transform:translate(-3px,2px);}
   50%{transform:translate(3px,-2px);}
   75%{transform:translate(-2px,-1px);}
+}
+/* —— 序幕：夜幕垂帘 —— */
+.spHero{
+  position:relative; display:flex;
+  animation:spHeroPush 7.2s cubic-bezier(.2,.6,.3,1) forwards;
+}
+@keyframes spHeroPush{0%{transform:scale(1.035);}100%{transform:scale(1);}}
+.spMoon{ /* 明月东升 */
+  position:absolute; left:50%; top:15%; z-index:0;
+  width:11vmin; height:11vmin; margin-left:-30vmin;
+  border-radius:50%;
+  background:
+    radial-gradient(circle at 62% 30%, rgba(176,146,98,.30) 0 16%, transparent 28%),
+    radial-gradient(circle at 34% 58%, rgba(176,146,98,.24) 0 11%, transparent 22%),
+    radial-gradient(circle at 55% 72%, rgba(176,146,98,.20) 0 7%, transparent 16%),
+    radial-gradient(circle at 42% 38%, #f7ead0, #ecd9ab 58%, #d9bd82);
+  box-shadow:0 0 34px rgba(236,217,171,.42), 0 0 92px rgba(236,217,171,.22), 0 0 170px rgba(236,217,171,.1);
+  opacity:0; transform:translateY(9vh) scale(.92);
+  animation:spMoon 2.4s cubic-bezier(.16,.6,.3,1) .1s forwards;
+}
+@keyframes spMoon{to{opacity:1; transform:translateY(0) scale(1);}}
+.spMoon::after{ /* 月晕，缓慢呼吸 */
+  content:""; position:absolute; inset:-16px; border-radius:50%;
+  border:1px solid rgba(236,217,171,.18); opacity:0;
+  animation:spHalo 4s ease-in-out 1.6s infinite;
+}
+@keyframes spHalo{0%,100%{opacity:.35; transform:scale(1);} 50%{opacity:.75; transform:scale(1.06);}}
+.spStars{position:absolute; inset:0 0 40% 0; z-index:0; pointer-events:none;}
+.spStars i{
+  position:absolute; border-radius:50%; background:#e8d9b4;
+  opacity:0;
+  animation:spStarIn .6s ease var(--d,.6s) forwards,
+            spTwinkle 3.4s ease-in-out calc(var(--d,.6s) + 1.2s) infinite;
+}
+@keyframes spStarIn{to{opacity:1;}}
+@keyframes spTwinkle{0%,100%{opacity:1;} 50%{opacity:.28;}}
+.spMountains{ /* 远山墨影，自下浮起 */
+  position:absolute; left:0; right:0; bottom:0; z-index:0;
+  height:clamp(200px, 32vh, 330px); pointer-events:none;
+  opacity:0; transform:translateY(30px);
+  animation:spMtnIn 1.8s cubic-bezier(.2,.6,.3,1) .55s forwards;
+}
+.spMountains::after{ /* 山脚雾霭：隔开山影与城郭，水墨留白 */
+  content:""; position:absolute; left:0; right:0; bottom:0; height:46%;
+  background:linear-gradient(180deg, transparent 0%, rgba(216,184,122,.10) 38%, rgba(190,64,44,.08) 62%, rgba(9,6,4,.55) 100%);
+}
+@keyframes spMtnIn{to{opacity:1; transform:translateY(0);}}
+.spMtnFar{fill:#2e2414; opacity:.95;}
+.spMtnNear{fill:#1c150c;}
+.spRidge{ /* 金线勾描山脊，一笔画就 */
+  fill:none; stroke:rgba(201,143,45,.6); stroke-width:1.6;
+  stroke-dasharray:1000; stroke-dashoffset:1000;
+  animation:spRidgeDraw 2.4s cubic-bezier(.4,.2,.3,1) .8s forwards;
+}
+@keyframes spRidgeDraw{to{stroke-dashoffset:0;}}
+.spGeese{ /* 雁阵掠月 */
+  position:absolute; top:12%; left:0; width:100%; z-index:4; pointer-events:none;
+  opacity:0; animation:spFade .5s ease 1.1s forwards;
+}
+.spFlock{
+  display:flex; align-items:flex-end; gap:1.6vmin;
+  transform:translateX(-16vw);
+  animation:spFly 3.4s linear 1.3s forwards;
+}
+@keyframes spFly{to{transform:translateX(114vw);}}
+.spGoose{width:clamp(20px, 3vmin, 30px); height:auto;}
+.spGoose path{
+  stroke:#8a734e; stroke-width:2.4; fill:none; stroke-linecap:round;
+  transform-box:fill-box; transform-origin:50% 82%;
+  animation:spFlap .8s ease-in-out infinite alternate;
+}
+@keyframes spFlap{from{transform:scaleY(.45);} to{transform:scaleY(1.12);}}
+.spGeese .g2{margin-top:10px; opacity:.85; width:clamp(17px, 2.6vmin, 26px);}
+.spGeese .g3{margin-top:16px; opacity:.7;  width:clamp(14px, 2.2vmin, 22px);}
+.spHint{ /* 跳过提示 */
+  position:absolute; right:18px; bottom:16px; z-index:40; pointer-events:none;
+  font-family:var(--serif); font-size:11px; letter-spacing:.3em; text-indent:.3em;
+  color:rgba(216,184,122,.4); opacity:0;
+  animation:spFade .8s ease 1.4s forwards;
+}
+/* —— 夜空增彩 —— */
+.spGalaxy{ /* 银河斜贯 */
+  position:absolute; left:-18%; top:2%; width:140%; height:36%; z-index:0;
+  transform:rotate(-13deg); pointer-events:none; filter:blur(6px);
+  background:
+    radial-gradient(30% 24% at 35% 46%, rgba(233,205,166,.17), transparent 70%),
+    radial-gradient(55% 42% at 28% 50%, rgba(233,205,166,.13), transparent 70%),
+    radial-gradient(42% 55% at 58% 42%, rgba(216,190,150,.10), transparent 72%),
+    radial-gradient(50% 40% at 82% 55%, rgba(233,205,166,.08), transparent 70%);
+  opacity:0; animation:spFade 1.8s ease .2s forwards;
+}
+.spStarBig{ /* 十字光芒的亮星 */
+  position:absolute; left:38%; top:32%; z-index:1; width:4px; height:4px; margin:-2px;
+  border-radius:50%; background:#f4ead0;
+  box-shadow:0 0 10px rgba(244,234,208,.8);
+  opacity:0;
+  animation:spStarIn .8s ease 1s forwards, spTwinkle 4.2s ease-in-out 1.8s infinite;
+}
+.spStarBig::before,.spStarBig::after{content:""; position:absolute; left:50%; top:50%;}
+.spStarBig::before{
+  width:26px; height:1px; margin:-.5px 0 0 -13px;
+  background:linear-gradient(90deg, transparent, rgba(244,234,208,.75), transparent);
+}
+.spStarBig::after{
+  width:1px; height:26px; margin:-13px 0 0 -.5px;
+  background:linear-gradient(180deg, transparent, rgba(244,234,208,.75), transparent);
+}
+.spCloud{ /* 墨云过月 */
+  position:absolute; z-index:2; pointer-events:none;
+  border-radius:50%; filter:blur(10px);
+}
+.spCloud.c1{
+  left:26%; top:11%; width:36vmin; height:9vmin;
+  background:radial-gradient(closest-side, rgba(12,9,6,.85), rgba(12,9,6,.5) 55%, transparent 80%);
+  opacity:0;
+  animation:spCloudDrift1 4.6s ease-in-out .9s forwards;
+}
+.spCloud.c2{
+  right:20%; top:21%; width:26vmin; height:7vmin;
+  background:radial-gradient(closest-side, rgba(12,9,6,.75), rgba(12,9,6,.42) 55%, transparent 80%);
+  opacity:0;
+  animation:spCloudDrift2 4.2s ease-in-out 3.2s forwards;
+}
+@keyframes spCloudDrift1{ /* 从月亮左侧飘入，缓缓遮过月面 */
+  0%{opacity:0; transform:translateX(-16vmin);}
+  18%{opacity:.85;}
+  82%{opacity:.75;}
+  100%{opacity:0; transform:translateX(30vmin);}
+}
+@keyframes spCloudDrift2{
+  0%{opacity:0; transform:translateX(6vmin);}
+  20%{opacity:.65;}
+  85%{opacity:.6;}
+  100%{opacity:0; transform:translateX(-46vmin);}
+}
+.spMeteor{ /* 流星一闪（掠过高空，避开题名） */
+  position:absolute; right:3%; top:6%; z-index:2;
+  width:170px; height:2.5px; border-radius:2px;
+  background:linear-gradient(90deg, rgba(255,236,200,1), rgba(244,227,189,.5) 45%, transparent 75%);
+  box-shadow:0 0 12px rgba(244,227,189,.75);
+  opacity:0; pointer-events:none;
+  animation:spMeteor 1.05s cubic-bezier(.2,.6,.4,1) 2.6s forwards;
+}
+@keyframes spMeteor{
+  0%{opacity:0; transform:rotate(-16deg) translateX(50px);}
+  10%{opacity:.95;}
+  100%{opacity:0; transform:rotate(-16deg) translateX(-44vw) translateY(10vw);}
+}
+.spBranch{ /* 前景梅枝 */
+  position:absolute; right:0; top:0; z-index:6;
+  width:clamp(150px, 24vmin, 300px); pointer-events:none;
+  opacity:0; transform-origin:100% 0;
+  animation:spFade 1s ease .6s forwards, spSway 5.5s ease-in-out 1.6s infinite alternate;
+}
+@keyframes spSway{from{transform:rotate(0deg);} to{transform:rotate(1.6deg);}}
+.spTwig{stroke:#0f0a07; fill:none; stroke-linecap:round;}
+.spPlumP{fill:#c14630; opacity:.92;}
+.spPlumC{fill:#e2b264;}
+.spBud{fill:#8e2b1e;}
+/* —— 夜空炫彩 —— */
+.spAurora{ /* 紫气东来：冷暖对撞的极光带 */
+  position:absolute; inset:0; z-index:1; pointer-events:none;
+  mix-blend-mode:screen;
+  opacity:0; animation:spFade 2s ease .3s forwards;
+}
+.spAur{position:absolute; border-radius:50%; filter:blur(16px);}
+.spAur.r1{
+  left:-12%; top:2%; width:75%; height:20%;
+  background:radial-gradient(60% 50% at 40% 50%, rgba(158,124,255,.4), rgba(96,210,190,.17) 55%, transparent 75%);
+  animation:spAurDrift 11s ease-in-out 0s infinite alternate;
+}
+.spAur.r2{
+  left:30%; top:9%; width:70%; height:16%;
+  background:radial-gradient(55% 45% at 55% 45%, rgba(216,120,255,.32), rgba(150,120,255,.14) 60%, transparent 78%);
+  animation:spAurDrift 13s ease-in-out 1.6s infinite alternate-reverse;
+}
+.spAur.r3{
+  left:8%; top:19%; width:60%; height:14%;
+  background:radial-gradient(60% 50% at 45% 55%, rgba(88,190,220,.28), rgba(146,110,255,.14) 60%, transparent 80%);
+  animation:spAurDrift 9.5s ease-in-out .8s infinite alternate;
+}
+@keyframes spAurDrift{
+  0%{opacity:.65; transform:translateX(-3%) rotate(-1.5deg) scaleY(1);}
+  50%{opacity:1;}
+  100%{opacity:.7; transform:translateX(4%) rotate(1.2deg) scaleY(1.3);}
+}
+.spDipper{ /* 北斗七星：斗转星移 */
+  position:absolute; right:5%; top:4%; z-index:1;
+  width:clamp(220px, 30vmin, 360px); height:auto; pointer-events:none;
+}
+.spDipLine{
+  fill:none; stroke:rgba(201,143,45,.38); stroke-width:1.2;
+  stroke-dasharray:1000; stroke-dashoffset:1000;
+  filter:drop-shadow(0 0 3px rgba(233,205,166,.45));
+  animation:spRidgeDraw 1.7s cubic-bezier(.4,.2,.3,1) 1.05s forwards;
+}
+.spDipStar{
+  fill:#f4ead0; opacity:0;
+  animation:spStarIn .6s ease var(--d,.6s) forwards,
+            spTwinkle 3.6s ease-in-out calc(var(--d,.6s) + .9s) infinite;
+}
+.spDipStars{filter:drop-shadow(0 0 4px rgba(244,234,208,.55));}
+.spMoonRipple{ /* 月晕涟漪 */
+  position:absolute; left:50%; top:15%; width:11vmin; height:11vmin; margin-left:-30vmin;
+  z-index:1; border-radius:50%; border:1.5px solid rgba(236,217,171,.3);
+  opacity:0; pointer-events:none;
+  animation:spMoonRip 5.5s cubic-bezier(.2,.6,.3,1) 1.3s infinite;
+}
+.spMoonRipple.mr2{animation-delay:3.9s;}
+@keyframes spMoonRip{
+  0%{opacity:0; transform:scale(1);}
+  12%{opacity:.5;}
+  100%{opacity:0; transform:scale(4.6);}
+}
+.spShower{ /* 流星雨 */
+  position:absolute; inset:0; z-index:2; pointer-events:none; overflow:hidden;
+}
+.spShower i{
+  position:absolute; width:var(--len,100px); height:1.5px; border-radius:2px;
+  background:linear-gradient(90deg, rgba(244,227,189,.9), transparent 72%);
+  opacity:0;
+  animation:spShoot .8s ease-out var(--d,4.4s) forwards;
+}
+@keyframes spShoot{
+  0%{opacity:0; transform:rotate(-18deg) translateX(0);}
+  15%{opacity:.85;}
+  100%{opacity:0; transform:rotate(-18deg) translateX(var(--tx,-30vw)) translateY(var(--ty,10vw));}
+}
+.spSkyDust{ /* 横穿天际的金色星尘 */
+  position:absolute; inset:0 0 42% 0; z-index:1; pointer-events:none; overflow:hidden;
+}
+.spSkyDust i{
+  position:absolute; width:3px; height:3px; border-radius:50%;
+  background:rgba(233,205,166,.85); box-shadow:0 0 6px rgba(233,205,166,.6);
+  opacity:0; animation:spDrift var(--dd,30s) linear var(--dl,0s) infinite;
+}
+@keyframes spDrift{
+  0%{transform:translate(-4vw,2vh); opacity:0;}
+  12%{opacity:.8;}
+  85%{opacity:.5;}
+  100%{transform:translate(104vw,-6vh); opacity:0;}
 }
 .spHero{position:relative; display:flex;}
 .spInk{ /* 朱砂墨晕 */
@@ -809,7 +1052,7 @@ body:has(#splash){overflow:hidden;}
   filter:blur(8px); mix-blend-mode:screen;
   border-radius:52% 48% 44% 56%/58% 44% 56% 42%;
   opacity:0; transform:scale(.18) rotate(-10deg);
-  animation:spInk 2.2s cubic-bezier(.2,.7,.3,1) .5s forwards;
+  animation:spInk 2.3s cubic-bezier(.2,.7,.3,1) .62s forwards;
 }
 @keyframes spInk{
   0%{opacity:0; transform:scale(.18) rotate(-10deg);}
@@ -823,8 +1066,8 @@ body:has(#splash){overflow:hidden;}
   border-radius:50%; border:1.5px solid rgba(232,124,92,.55);
   opacity:0; transform:scale(.2);
 }
-.spRipple.r1{animation:spRip 1.5s cubic-bezier(.2,.6,.3,1) .55s forwards;}
-.spRipple.r2{animation:spRip 1.5s cubic-bezier(.2,.6,.3,1) .74s forwards;}
+.spRipple.r1{animation:spRip 1.5s cubic-bezier(.2,.6,.3,1) .62s forwards;}
+.spRipple.r2{animation:spRip 1.5s cubic-bezier(.2,.6,.3,1) .82s forwards;}
 @keyframes spRip{
   0%{opacity:.9; transform:scale(.25);}
   100%{opacity:0; transform:scale(34);}
@@ -836,8 +1079,8 @@ body:has(#splash){overflow:hidden;}
   border-radius:50%/58% 58% 44% 44%;
   box-shadow:0 0 14px rgba(212,85,63,.85), 0 0 34px rgba(212,85,63,.35);
   opacity:0; transform:translateY(-46vh) scale(.72);
-  animation:spDrop .52s cubic-bezier(.42,0,.86,.62) .06s forwards,
-            spDropFade .3s ease .55s forwards;
+  animation:spDrop .52s cubic-bezier(.42,0,.86,.62) .1s forwards,
+            spDropFade .3s ease .62s forwards;
 }
 @keyframes spDrop{
   0%{opacity:0; transform:translateY(-46vh) scale(.72);}
@@ -847,6 +1090,33 @@ body:has(#splash){overflow:hidden;}
 @keyframes spDropFade{
   0%{opacity:1; transform:translateY(0) scale(1);}
   100%{opacity:0; transform:translateY(0) scale(2.2);}
+}
+.spImpact{ /* 墨滴落点闪光 */
+  position:absolute; left:50%; top:50%; z-index:2;
+  width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%;
+  background:radial-gradient(circle, rgba(255,224,180,.95), rgba(240,150,110,.55) 45%, transparent 70%);
+  opacity:0;
+  animation:spImpact .4s ease-out .62s forwards;
+}
+@keyframes spImpact{
+  0%{opacity:0; transform:scale(.3);}
+  25%{opacity:1;}
+  100%{opacity:0; transform:scale(3.4);}
+}
+.spSplash{ /* 墨花四溅 */
+  position:absolute; left:50%; top:50%; z-index:2; width:0; height:0;
+}
+.spSplash i{
+  position:absolute; left:0; top:0; width:5px; height:5px; margin:-2.5px 0 0 -2.5px;
+  border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #ef7a55, #b33a2b);
+  opacity:0;
+  animation:spSplatter .6s cubic-bezier(.15,.6,.4,1) var(--d,.62s) forwards;
+}
+@keyframes spSplatter{
+  0%{opacity:0; transform:translate(0,0) scale(.4);}
+  12%{opacity:.95;}
+  100%{opacity:0; transform:translate(var(--tx,40px), var(--ty,-60px)) scale(1);}
 }
 .spTitle{
   position:relative; z-index:2; margin:0;
@@ -862,20 +1132,20 @@ body:has(#splash){overflow:hidden;}
   filter:blur(14px); transform:translateY(16px) scale(1.5);
   animation:spChar .55s cubic-bezier(.2,.8,.3,1) forwards;
 }
-.spTitle span:nth-child(1){animation-delay:.8s;}
-.spTitle span:nth-child(2){animation-delay:1.0s;}
-.spTitle span:nth-child(3){animation-delay:1.2s;}
-.spTitle span:nth-child(4){animation-delay:1.4s;}
+.spTitle span:nth-child(1){animation-delay:1.6s;}
+.spTitle span:nth-child(2){animation-delay:1.85s;}
+.spTitle span:nth-child(3){animation-delay:2.1s;}
+.spTitle span:nth-child(4){animation-delay:2.35s;}
 @keyframes spChar{
-  0%{opacity:0; filter:blur(14px); transform:translateY(16px) scale(1.5);}
-  62%{opacity:1; filter:blur(0); transform:translateY(-3px) scale(.98);}
-  100%{opacity:1; filter:blur(0); transform:translateY(0) scale(1);}
+  0%{opacity:0; filter:blur(14px); transform:translateY(16px) scale(1.5) rotate(-4deg);}
+  62%{opacity:1; filter:blur(0); transform:translateY(-3px) scale(.98) rotate(1deg);}
+  100%{opacity:1; filter:blur(0); transform:translateY(0) scale(1) rotate(0);}
 }
 .spLine{ /* 一笔朱砂界线 */
   width:min(46vmin, 300px); height:2px; margin-top:16px; border-radius:2px;
   background:linear-gradient(90deg, transparent, rgba(212,85,63,.85) 20%, rgba(224,178,104,.9) 50%, rgba(212,85,63,.85) 80%, transparent);
   transform:scaleX(0);
-  animation:spLine .65s cubic-bezier(.6,0,.2,1) 1.55s forwards;
+  animation:spLine .65s cubic-bezier(.6,0,.2,1) 2.85s forwards;
 }
 @keyframes spLine{to{transform:scaleX(1);}}
 .spSub{
@@ -883,9 +1153,24 @@ body:has(#splash){overflow:hidden;}
   font-family:var(--serif); font-size:clamp(12px, 2.3vmin, 15px);
   letter-spacing:.55em; text-indent:.55em;
   color:rgba(216,184,122,.85);
-  opacity:0; animation:spFade .55s ease 1.75s forwards;
+  opacity:0; animation:spFade .55s ease 3.05s forwards;
 }
 @keyframes spFade{to{opacity:1;}}
+.spVerse{ /* 尾句点题：逐字浮现 */
+  margin-top:24px;
+  font-family:var(--serif); font-size:clamp(12px, 2.2vmin, 15px);
+  letter-spacing:.3em; text-indent:.3em;
+  color:rgba(233,217,176,.88);
+}
+.spVerse span{
+  display:inline-block; opacity:0;
+  filter:blur(5px); transform:translateY(7px);
+  animation:spVerseIn .5s cubic-bezier(.2,.7,.3,1) var(--d, 4s) forwards;
+}
+@keyframes spVerseIn{
+  0%{opacity:0; filter:blur(5px); transform:translateY(7px);}
+  100%{opacity:1; filter:blur(0); transform:translateY(0);}
+}
 .spSeal{ /* 落款印章（盖下 + 震屏 + 闪光） */
   position:relative; margin-top:30px;
   width:66px; height:66px;
@@ -895,7 +1180,7 @@ body:has(#splash){overflow:hidden;}
   font-family:var(--serif); font-size:17px; font-weight:700; line-height:1;
   box-shadow:inset 0 0 0 2px rgba(246,236,210,.4), inset 0 0 16px rgba(0,0,0,.3), 0 12px 34px rgba(181,56,47,.42);
   opacity:0; transform:scale(2.6) rotate(5deg);
-  animation:spSeal .48s cubic-bezier(.3,1.5,.4,1) 1.9s forwards;
+  animation:spSeal .48s cubic-bezier(.3,1.5,.4,1) 3.4s forwards;
 }
 .spSeal b{font-weight:700;}
 @keyframes spSeal{
@@ -907,7 +1192,17 @@ body:has(#splash){overflow:hidden;}
 .spFlash{
   position:absolute; inset:-46px; z-index:-1; border-radius:50%;
   background:radial-gradient(circle, rgba(212,85,63,.5) 0%, rgba(212,85,63,.18) 42%, transparent 65%);
-  opacity:0; animation:spFlash .5s ease-out 1.9s forwards;
+  opacity:0; animation:spFlash .5s ease-out 3.4s forwards;
+}
+.spSealDust{ /* 印泥飞尘迸溅 */
+  position:absolute; left:50%; top:50%; z-index:2;
+}
+.spSealDust i{
+  position:absolute; left:0; top:0; width:4px; height:4px; margin:-2px 0 0 -2px;
+  border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #f4c563, #b33a2b);
+  opacity:0;
+  animation:spSplatter .55s cubic-bezier(.15,.6,.4,1) var(--d, 3.66s) forwards;
 }
 @keyframes spFlash{
   0%{opacity:0; transform:scale(.4);}
@@ -933,18 +1228,64 @@ body:has(#splash){overflow:hidden;}
 }
 /* 万家灯火：夜色城郭 + 窗灯次第点亮 */
 .spCity{
-  position:absolute; left:0; right:0; bottom:0; z-index:1;
-  height:clamp(110px, 20vh, 200px);
+  position:absolute; left:0; right:0; bottom:0; z-index:3;
+  height:clamp(150px, 26vh, 240px);
   pointer-events:none;
+  opacity:0; transform:translateY(26px) scale(1.06);
+  animation:spCityIn 1.7s cubic-bezier(.2,.6,.3,1) .5s forwards;
+}
+@keyframes spCityIn{ /* 城郭自暮色中浮起，缓缓落定 */
+  0%{opacity:0; transform:translateY(26px) scale(1.06);}
+  32%{opacity:1;}
+  100%{opacity:1; transform:translateY(0) scale(1);}
 }
 .spHorizon{
   position:absolute; left:50%; bottom:0; transform:translateX(-50%);
   width:130%; height:130px;
   background:radial-gradient(60% 100% at 50% 100%, rgba(201,143,45,.18), rgba(181,56,47,.07) 55%, transparent 75%);
-  opacity:0; animation:spFade 1.4s ease .25s forwards;
+  opacity:0; animation:spFade 1.4s ease .6s forwards;
 }
 .spSkyline{position:absolute; inset:0; width:100%; height:100%;}
-.spRoofs rect{fill:#191209;}
+/* 古城剪影：墙 spB1/spB2 · 屋脊 spRf · 檐角 spTips · 窗棂 spLattice */
+.spBldg .spB1{fill:#181209;}
+.spBldg .spB2{fill:#1d150b;}
+.spRf{fill:#0f0a06;}
+.spTips path{stroke:#100b07; stroke-width:2.6; fill:none; stroke-linecap:round;}
+.spLattice path{stroke:#150e08; stroke-width:1; fill:none;}
+/* 檐角灯笼 */
+.spLantG{
+  opacity:0; transform-box:fill-box; transform-origin:50% 0;
+  animation:spWinIn .5s ease var(--d, 1.6s) forwards,
+            spSwayL 2.7s ease-in-out calc(var(--d, 1.6s) + .3s) infinite alternate;
+}
+@keyframes spSwayL{from{transform:rotate(-6deg);} to{transform:rotate(7deg);}}
+.spLant{fill:#d84a33;}
+.spLantStr{stroke:#241a10; stroke-width:1.2;}
+.spLantGlow{fill:#c9552f; opacity:0; animation:spWinIn .5s ease var(--d, 1.6s) forwards;}
+/* 水中灯影与波光 */
+.spRefl{
+  opacity:0;
+  animation:spReflIn 1.2s ease var(--d, 1.8s) forwards,
+            spShim 3.6s ease-in-out calc(var(--d, 1.8s) + 1.2s) infinite alternate;
+}
+@keyframes spReflIn{to{opacity:1;}}
+@keyframes spShim{from{opacity:1;} to{opacity:.5;}}
+.spMoonRefl{opacity:0; animation:spFade 2s ease 1.8s forwards;}
+.spWave{
+  fill:none; stroke:rgba(233,180,92,.13); stroke-width:1.2; stroke-dasharray:14 10;
+  animation:spWaveMove 9s linear infinite;
+}
+@keyframes spWaveMove{to{stroke-dashoffset:-96;}}
+.spSmoke{ /* 炊烟袅袅 */
+  fill:none; stroke:rgba(205,185,155,.20); stroke-width:5; stroke-linecap:round;
+  opacity:0; animation:spSmoke 7s ease-in-out 2.4s infinite;
+}
+@keyframes spSmoke{
+  0%{opacity:0; transform:translateY(8px);}
+  30%{opacity:.55;}
+  70%{opacity:.25;}
+  100%{opacity:0; transform:translateY(-30px);}
+}
 .spWin{
   fill:#e9b45c; opacity:0;
   animation:spWinIn .55s ease var(--d, 1s) forwards;
@@ -957,6 +1298,23 @@ body:has(#splash){overflow:hidden;}
 }
 @keyframes spWinIn{to{opacity:1;}}
 @keyframes spFlick{0%,100%{opacity:1;} 50%{opacity:.55;}}
+.spVeil{ /* 墨化谢幕：墨晕自中心吞没全屏，再整体溶入书房 */
+  position:absolute; inset:0; z-index:60; pointer-events:none;
+  background:#0b0806;
+  clip-path:circle(0% at 50% 44%);
+  animation:spVeil 1s cubic-bezier(.55,.05,.5,.95) 5.45s forwards;
+}
+@keyframes spVeil{to{clip-path:circle(125% at 50% 44%);}}
+.spVeil::before{ /* 不规则墨晕边缘，吞没更有呼吸感 */
+  content:""; position:absolute; left:50%; top:44%;
+  width:150vmax; height:150vmax; margin:-75vmax 0 0 -75vmax;
+  background:radial-gradient(circle, #0b0806 58%, rgba(11,8,6,0) 67%);
+  border-radius:47% 53% 50% 50%/51% 49% 55% 45%;
+  filter:blur(6px);
+  opacity:0; transform:scale(0) rotate(-14deg);
+  animation:spVeilBlob 1.15s cubic-bezier(.5,.05,.5,.95) 5.4s forwards;
+}
+@keyframes spVeilBlob{to{opacity:1; transform:scale(1.02) rotate(3deg);}}
 
 /* =====================================================
    游戏角：消消乐 / 拼词 / 快答 / 救援（gm* 前缀）

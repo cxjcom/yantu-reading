@@ -3521,7 +3521,7 @@ function audioCtx(){
   ['keydown','wheel','touchstart'].forEach(function(t){
     window.addEventListener(t, skip, {passive:true, once:true});
   });
-  setTimeout(end, 4200); /* 兜底：动画被系统省电策略停住也能移除 */
+  setTimeout(end, 7800); /* 兜底：动画被系统省电策略停住也能移除（长版约 7.2s） */
 })();
 
 /* =====================================================

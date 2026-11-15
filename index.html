@@ -8,12 +8,12 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=47">
+<link rel="stylesheet" href="assets/css/app.css?v=53">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
 
-<!-- 开屏动画：朱砂落墨（纯 CSS 播放，JS 负责移除；点击/滚轮/按键可跳过） -->
+<!-- 开屏动画：朱砂落墨 · 万家灯火（夜幕垂帘→墨滴落砚→城郭灯次第→雁阵掠月→题名落印→灯下赶路人→墨化谢幕；纯 CSS 播放，JS 负责移除；点击/滚轮/按键可跳过） -->
 <div id="splash" aria-hidden="true">
   <div class="spMotes">
     <i style="left:6%;  width:3px;height:3px; animation-duration:4.2s; animation-delay:.2s;"></i>
@@ -28,111 +28,327 @@
     <i style="left:88%; width:2px;height:2px; animation-duration:5.0s; animation-delay:1.5s;"></i>
     <i style="left:94%; width:3px;height:3px; animation-duration:4.6s; animation-delay:.6s;"></i>
   </div>
-  <!-- 万家灯火：夜色城郭，窗灯次第点亮（每一盏，都是深夜苦读的人） -->
+  <!-- 序幕：明月 + 星子 -->
+  <div class="spMoon" aria-hidden="true"></div>
+  <div class="spStars" aria-hidden="true">
+    <i style="left:5%;  top:12%; width:2px;   height:2px;   --d:.3s;"></i>
+    <i style="left:12%; top:26%; width:2.5px; height:2.5px; --d:.7s;  background:rgba(201,143,45,.9);"></i>
+    <i style="left:18%; top:8%;  width:2px;   height:2px;   --d:.5s;"></i>
+    <i style="left:26%; top:18%; width:2px;   height:2px;   --d:1s;"></i>
+    <i style="left:33%; top:10%; width:3px;   height:3px;   --d:.4s;  background:rgba(201,143,45,.85);"></i>
+    <i style="left:41%; top:22%; width:2px;   height:2px;   --d:.9s;"></i>
+    <i style="left:49%; top:7%;  width:2px;   height:2px;   --d:.6s;"></i>
+    <i style="left:58%; top:15%; width:2.5px; height:2.5px; --d:.8s;  background:rgba(201,143,45,.85);"></i>
+    <i style="left:66%; top:9%;  width:2px;   height:2px;   --d:.5s;"></i>
+    <i style="left:74%; top:20%; width:2px;   height:2px;   --d:1.1s;"></i>
+    <i style="left:82%; top:12%; width:3px;   height:3px;   --d:.35s; background:rgba(201,143,45,.9);"></i>
+    <i style="left:90%; top:24%; width:2px;   height:2px;   --d:.75s;"></i>
+    <i style="left:95%; top:7%;  width:2px;   height:2px;   --d:.9s;"></i>
+    <i style="left:22%; top:30%; width:1.5px; height:1.5px; --d:1.2s;"></i>
+    <i style="left:56%; top:6%;  width:1.5px; height:1.5px; --d:.45s;"></i>
+    <i style="left:63%; top:19%; width:2px;   height:2px;   --d:.55s;"></i>
+    <i style="left:71%; top:5%;  width:2px;   height:2px;   --d:.7s;  background:rgba(201,143,45,.8);"></i>
+    <i style="left:79%; top:26%; width:1.5px; height:1.5px; --d:.85s;"></i>
+    <i style="left:87%; top:16%; width:2px;   height:2px;   --d:.5s;"></i>
+    <i style="left:36%; top:29%; width:1.5px; height:1.5px; --d:.65s;"></i>
+    <i style="left:15%; top:33%; width:2px;   height:2px;   --d:.95s;"></i>
+    <i style="left:4%;  top:6%;  width:2px;   height:2px;   --d:.4s;  background:rgba(201,143,45,.8);"></i>
+    <i style="left:9%;  top:20%; width:1.5px; height:1.5px; --d:.6s;"></i>
+    <i style="left:30%; top:4%;  width:2px;   height:2px;   --d:.55s;"></i>
+    <i style="left:45%; top:30%; width:1.5px; height:1.5px; --d:1s;"></i>
+  </div>
+  <!-- 夜空炫彩：紫气东来 · 北斗七星 · 月晕涟漪 · 流星雨 · 星尘 -->
+  <div class="spAurora" aria-hidden="true">
+    <i class="spAur r1"></i>
+    <i class="spAur r2"></i>
+    <i class="spAur r3"></i>
+  </div>
+  <svg class="spDipper" viewBox="0 0 440 210" aria-hidden="true">
+    <path class="spDipLine" pathLength="1000" d="M60,150 L150,162 L172,88 L82,80 Z M172,88 L252,66 L336,92 L420,58"/>
+    <g class="spDipStars">
+      <circle class="spDipStar" style="--d:.35s"  cx="60"  cy="150" r="2.6"/>
+      <circle class="spDipStar" style="--d:.5s"   cx="150" cy="162" r="3"/>
+      <circle class="spDipStar" style="--d:.65s"  cx="172" cy="88"  r="3.2"/>
+      <circle class="spDipStar" style="--d:.8s"   cx="82"  cy="80"  r="2.4"/>
+      <circle class="spDipStar" style="--d:.95s"  cx="252" cy="66"  r="2.6"/>
+      <circle class="spDipStar" style="--d:1.1s"  cx="336" cy="92"  r="3"/>
+      <circle class="spDipStar" style="--d:1.25s" cx="420" cy="58"  r="2.4"/>
+    </g>
+  </svg>
+  <i class="spMoonRipple mr1" aria-hidden="true"></i>
+  <i class="spMoonRipple mr2" aria-hidden="true"></i>
+  <div class="spShower" aria-hidden="true">
+    <i style="--d:4.35s; --tx:-30vw; --ty:10vw; left:86%; top:7%;  --len:110px"></i>
+    <i style="--d:4.5s;  --tx:-22vw; --ty:8vw;  left:70%; top:3%;  --len:80px"></i>
+    <i style="--d:4.65s; --tx:-34vw; --ty:11vw; left:93%; top:13%; --len:130px"></i>
+  </div>
+  <div class="spSkyDust" aria-hidden="true">
+    <i style="left:8%;  top:64%; --dd:26s; --dl:-4s;"></i>
+    <i style="left:19%; top:82%; --dd:31s; --dl:-14s;"></i>
+    <i style="left:28%; top:50%; --dd:24s; --dl:-9s;"></i>
+    <i style="left:37%; top:90%; --dd:34s; --dl:-20s;"></i>
+    <i style="left:46%; top:58%; --dd:28s; --dl:-2s;"></i>
+    <i style="left:55%; top:76%; --dd:30s; --dl:-17s;"></i>
+    <i style="left:63%; top:44%; --dd:23s; --dl:-11s;"></i>
+    <i style="left:71%; top:85%; --dd:32s; --dl:-6s;"></i>
+    <i style="left:79%; top:62%; --dd:27s; --dl:-22s;"></i>
+    <i style="left:87%; top:38%; --dd:25s; --dl:-13s;"></i>
+    <i style="left:93%; top:72%; --dd:29s; --dl:-8s;"></i>
+    <i style="left:15%; top:35%; --dd:33s; --dl:-25s;"></i>
+  </div>
+  <!-- 夜空增彩：银河 · 亮星 · 墨云过月 · 流星 -->
+  <div class="spGalaxy" aria-hidden="true"></div>
+  <i class="spStarBig" aria-hidden="true"></i>
+  <div class="spCloud c1" aria-hidden="true"></div>
+  <div class="spCloud c2" aria-hidden="true"></div>
+  <div class="spMeteor" aria-hidden="true"></div>
+  <!-- 远山墨影（金线勾描山脊） -->
+  <div class="spMountains" aria-hidden="true">
+    <svg viewBox="0 0 1200 260" preserveAspectRatio="xMidYMax slice">
+      <path class="spMtnFar" d="M0,192 Q120,118 240,164 Q340,196 430,158 Q540,104 660,152 Q760,186 860,146 Q960,112 1060,158 Q1130,182 1200,164 L1200,260 L0,260 Z"/>
+      <path class="spMtnNear" d="M0,226 Q150,158 280,204 Q400,168 500,206 Q620,148 750,198 Q880,162 990,208 Q1100,178 1200,204 L1200,260 L0,260 Z"/>
+      <path class="spRidge" pathLength="1000" d="M0,192 Q120,118 240,164 Q340,196 430,158 Q540,104 660,152 Q760,186 860,146 Q960,112 1060,158 Q1130,182 1200,164"/>
+    </svg>
+  </div>
+  <!-- 雁阵掠月 -->
+  <div class="spGeese" aria-hidden="true">
+    <div class="spFlock">
+      <svg class="spGoose" viewBox="0 0 44 18"><path d="M2,14 Q12,3 22,9 Q32,3 42,14"/></svg>
+      <svg class="spGoose g2" viewBox="0 0 44 18"><path d="M2,14 Q12,3 22,9 Q32,3 42,14"/></svg>
+      <svg class="spGoose g3" viewBox="0 0 44 18"><path d="M2,14 Q12,3 22,9 Q32,3 42,14"/></svg>
+    </div>
+  </div>
+  <div class="spHint">轻触跳过</div>
+  <!-- 万家灯火：古城临水，窗灯次第点亮（每一盏，都是深夜苦读的人） -->
   <div class="spCity" aria-hidden="true">
     <div class="spHorizon"></div>
-    <svg class="spSkyline" viewBox="0 0 1200 220" preserveAspectRatio="xMidYMax slice">
+    <svg class="spSkyline" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMax slice">
       <defs>
         <filter id="spGlow" x="-30%" y="-30%" width="160%" height="160%">
           <feGaussianBlur stdDeviation="4"/>
         </filter>
+        <linearGradient id="spWaterGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#0e0a06"/>
+          <stop offset="1" stop-color="#050302"/>
+        </linearGradient>
+        <linearGradient id="spReflGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#e9b45c" stop-opacity=".5"/>
+          <stop offset="1" stop-color="#e9b45c" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="spMoonReflGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ecd9ab" stop-opacity=".18"/>
+          <stop offset="1" stop-color="#ecd9ab" stop-opacity="0"/>
+        </linearGradient>
       </defs>
+      <g class="spBldg">
+        <!-- 左岸村舍 -->
+        <rect class="spB2" x="0" y="178" width="10" height="22"/>
+        <rect class="spB1" x="18" y="172" width="90" height="28"/>
+        <path class="spRf" d="M10,172 Q63,146 116,172 Z"/>
+        <rect class="spB2" x="28" y="158" width="70" height="14"/>
+        <path class="spRf" d="M20,158 Q63,134 106,158 Z"/>
+        <rect class="spB1" x="120" y="180" width="70" height="20"/>
+        <path class="spRf" d="M112,180 Q155,158 198,180 Z"/>
+        <rect class="spB2" x="200" y="176" width="62" height="24"/>
+        <path class="spRf" d="M192,176 Q231,154 270,176 Z"/>
+        <!-- 五层浮屠 -->
+        <rect class="spB1" x="281" y="168" width="58" height="32"/>
+        <path class="spRf" d="M272,168 Q310,146 348,168 Z"/>
+        <rect class="spB2" x="287" y="154" width="46" height="14"/>
+        <path class="spRf" d="M280,154 Q310,134 340,154 Z"/>
+        <rect class="spB1" x="293" y="142" width="34" height="12"/>
+        <path class="spRf" d="M287,142 Q310,124 333,142 Z"/>
+        <rect class="spB2" x="299" y="130" width="22" height="12"/>
+        <path class="spRf" d="M295,130 Q310,114 325,130 Z"/>
+        <rect class="spB1" x="304" y="120" width="12" height="10"/>
+        <path class="spRf" d="M301,120 Q310,106 319,120 Z"/>
+        <rect class="spRf" x="308" y="100" width="4" height="10"/>
+        <circle class="spRf" cx="310" cy="97" r="2.5"/>
+        <!-- 城楼 -->
+        <rect class="spB1" x="360" y="174" width="72" height="26"/>
+        <path class="spRf" d="M352,174 Q396,150 440,174 Z"/>
+        <rect class="spB1" x="445" y="180" width="140" height="20"/>
+        <g class="spB2">
+          <rect x="445" y="174" width="8" height="6"/><rect x="463" y="174" width="8" height="6"/>
+          <rect x="481" y="174" width="8" height="6"/><rect x="499" y="174" width="8" height="6"/>
+          <rect x="517" y="174" width="8" height="6"/><rect x="535" y="174" width="8" height="6"/>
+          <rect x="553" y="174" width="8" height="6"/><rect x="571" y="174" width="8" height="6"/>
+        </g>
+        <path class="spB2" d="M500,200 Q500,182 515,182 Q530,182 530,200 Z"/>
+        <rect class="spB1" x="475" y="158" width="80" height="22"/>
+        <path class="spRf" d="M466,158 Q515,132 564,158 Z"/>
+        <rect class="spB2" x="490" y="146" width="50" height="12"/>
+        <path class="spRf" d="M482,146 Q515,124 548,146 Z"/>
+        <rect class="spRf" x="513" y="134" width="4" height="12"/>
+        <rect class="spB1" x="600" y="178" width="68" height="22"/>
+        <path class="spRf" d="M592,178 Q634,156 676,178 Z"/>
+        <!-- 河畔小楼 -->
+        <rect class="spB1" x="688" y="172" width="72" height="28"/>
+        <path class="spRf" d="M680,172 Q724,148 768,172 Z"/>
+        <rect class="spB2" x="698" y="158" width="52" height="14"/>
+        <path class="spRf" d="M690,158 Q724,136 758,158 Z"/>
+        <rect class="spRf" x="736" y="150" width="6" height="8"/>
+        <rect class="spB2" x="782" y="180" width="56" height="20"/>
+        <path class="spRf" d="M774,180 Q810,160 846,180 Z"/>
+        <!-- 钟楼 -->
+        <rect class="spB1" x="858" y="170" width="58" height="30"/>
+        <path class="spRf" d="M850,170 Q887,146 924,170 Z"/>
+        <rect class="spB1" x="952" y="176" width="76" height="24"/>
+        <path class="spRf" d="M944,176 Q990,152 1036,176 Z"/>
+        <rect class="spB2" x="962" y="164" width="56" height="12"/>
+        <path class="spRf" d="M956,164 Q990,144 1024,164 Z"/>
+        <rect class="spB1" x="1044" y="182" width="62" height="18"/>
+        <path class="spRf" d="M1036,182 Q1075,162 1114,182 Z"/>
+        <rect class="spB2" x="1122" y="174" width="78" height="26"/>
+        <path class="spRf" d="M1114,174 Q1161,150 1208,174 Z"/>
+      </g>
+      <!-- 檐角挑飞 -->
+      <g class="spTips">
+        <path d="M10,172 q-7,-1 -10,-7"/><path d="M116,172 q7,-1 10,-7"/>
+        <path d="M466,158 q-7,-1 -10,-7"/><path d="M564,158 q7,-1 10,-7"/>
+        <path d="M680,172 q-7,-1 -10,-7"/><path d="M768,172 q7,-1 10,-7"/>
+        <path d="M850,170 q-7,-1 -10,-7"/><path d="M924,170 q7,-1 10,-7"/>
+        <path d="M272,168 q-6,-1 -9,-6"/><path d="M348,168 q6,-1 9,-6"/>
+        <path d="M1114,174 q-6,-1 -9,-6"/>
+      </g>
+      <!-- 水面 -->
+      <rect x="0" y="200" width="1200" height="40" fill="url(#spWaterGrad)"/>
+      <g class="spWaves">
+        <path class="spWave" style="animation-delay:.8s" d="M40,212 q30,-3 60,0 t60,0 t60,0 t60,0"/>
+        <path class="spWave" style="animation-delay:2.1s" d="M420,222 q30,-3 60,0 t60,0 t60,0"/>
+        <path class="spWave" style="animation-delay:3.4s" d="M760,214 q30,-3 60,0 t60,0 t60,0 t60,0"/>
+        <path class="spWave" style="animation-delay:1.5s" d="M180,231 q30,-3 60,0 t60,0 t60,0"/>
+      </g>
+      <!-- 灯火辉光层 -->
       <g class="spLightsGlow" filter="url(#spGlow)">
-        <rect class="spWin" style="--d:.7s"  x="18"  y="134" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.5s" x="44"  y="158" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.1s" x="66"  y="132" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.9s" x="30"  y="186" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.3s" x="116" y="164" width="7" height="10"/>
-        <rect class="spWin" style="--d:.9s"  x="150" y="178" width="7" height="10"/>
-        <rect class="spWin" style="--d:.8s"  x="206" y="112" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.6s" x="232" y="140" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.2s" x="262" y="118" width="7" height="10"/>
-        <rect class="spWin spWinFlick" style="--d:2.0s" x="240" y="190" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.4s" x="210" y="168" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.7s" x="316" y="168" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.0s" x="344" y="184" width="7" height="10"/>
-        <rect class="spWin" style="--d:.85s" x="390" y="146" width="7" height="10"/>
-        <rect class="spWin spWinLit spWinFlick" style="--d:1.85s" x="420" y="172" width="9" height="12"/>
-        <rect class="spWin" style="--d:1.25s" x="452" y="140" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.75s" x="398" y="196" width="7" height="10"/>
-        <rect class="spWin" style="--d:.75s"  x="506" y="104" width="7" height="10"/>
-        <rect class="spWin spWinLit" style="--d:1.95s" x="536" y="132" width="9" height="12"/>
-        <rect class="spWin" style="--d:1.15s" x="566" y="110" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.55s" x="520" y="180" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.35s" x="556" y="158" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.05s" x="616" y="162" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.45s" x="640" y="178" width="7" height="10"/>
-        <rect class="spWin" style="--d:.95s"  x="686" y="132" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.65s" x="716" y="158" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.3s"  x="744" y="136" width="7" height="10"/>
-        <rect class="spWin spWinFlick" style="--d:2.1s" x="700" y="190" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.5s"  x="790" y="172" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.15s" x="814" y="186" width="7" height="10"/>
-        <rect class="spWin" style="--d:.8s"   x="864" y="120" width="7" height="10"/>
-        <rect class="spWin spWinLit" style="--d:2.15s" x="1098" y="164" width="9" height="12"/>
-        <rect class="spWin" style="--d:1.2s"  x="926" y="124" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.8s"  x="978" y="158" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.4s"  x="1006" y="174" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.0s"  x="1022" y="150" width="7" height="10"/>
-        <rect class="spWin" style="--d:.9s"   x="1068" y="138" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.6s"  x="1128" y="140" width="7" height="10"/>
-        <rect class="spWin spWinFlick" style="--d:2.05s" x="1158" y="182" width="7" height="10"/>
+        <rect class="spWin" style="--d:.8s"  x="30"  y="180" width="7" height="10"/>
+        <rect class="spWin spWinFlick" style="--d:2.0s" x="52"  y="180" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.2s" x="74"  y="180" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.5s" x="52"  y="162" width="7" height="9"/>
+        <rect class="spWin" style="--d:.9s"  x="134" y="185" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.4s" x="162" y="185" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.1s" x="214" y="182" width="7" height="10"/>
+        <rect class="spWin spWinFlick" style="--d:2.1s" x="238" y="182" width="7" height="10"/>
+        <rect class="spWin" style="--d:.75s" x="296" y="182" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.3s" x="318" y="182" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.85s" x="305" y="158" width="7" height="8"/>
+        <rect class="spWin" style="--d:1.0s" x="374" y="181" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.6s" x="402" y="181" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.15s" x="492" y="165" width="8" height="11"/>
+        <rect class="spWin spWinLit" style="--d:1.95s" x="515" y="165" width="8" height="11"/>
+        <rect class="spWin" style="--d:1.35s" x="538" y="165" width="8" height="11"/>
+        <rect class="spWin" style="--d:1.7s" x="511" y="148" width="7" height="8"/>
+        <rect class="spWin" style="--d:.85s" x="614" y="184" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.45s" x="642" y="184" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.25s" x="694" y="180" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.05s" x="722" y="180" width="7" height="10"/>
+        <rect class="spWin spWinFlick" style="--d:1.75s" x="746" y="180" width="7" height="9"/>
+        <rect class="spWin spWinLit" style="--d:2.15s" x="713" y="161" width="7" height="8"/>
+        <rect class="spWin" style="--d:1.55s" x="797" y="186" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.9s" x="870" y="178" width="8" height="11"/>
+        <rect class="spWin spWinLit" style="--d:1.65s" x="897" y="178" width="8" height="11"/>
+        <rect class="spWin" style="--d:.95s" x="964" y="183" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.8s" x="990" y="183" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.3s" x="1014" y="183" width="7" height="9"/>
+        <rect class="spWin" style="--d:1.5s" x="1058" y="188" width="7" height="10"/>
+        <rect class="spWin spWinFlick" style="--d:2.05s" x="1082" y="188" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.0s" x="1140" y="182" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.35s" x="1172" y="182" width="7" height="10"/>
+        <circle class="spLantGlow" style="--d:1.4s" cx="116" cy="183" r="6"/>
+        <circle class="spLantGlow" style="--d:1.7s" cx="468" cy="168" r="6"/>
+        <circle class="spLantGlow" style="--d:1.9s" cx="766" cy="178" r="6"/>
+        <circle class="spLantGlow" style="--d:2.1s" cx="850" cy="177" r="6"/>
+        <rect class="spMoonRefl" x="525" y="202" width="26" height="36" rx="10" fill="url(#spMoonReflGrad)"/>
       </g>
-      <g class="spRoofs">
-        <rect x="0" y="118" width="92" height="102"/>
-        <rect x="96" y="148" width="88" height="72"/>
-        <rect x="188" y="96" width="104" height="124"/>
-        <rect x="296" y="152" width="70" height="68"/>
-        <rect x="370" y="128" width="112" height="92"/>
-        <rect x="486" y="86" width="106" height="134"/>
-        <rect x="596" y="146" width="66" height="74"/>
-        <rect x="666" y="116" width="98" height="104"/>
-        <rect x="768" y="158" width="72" height="62"/>
-        <rect x="844" y="102" width="110" height="118"/>
-        <rect x="958" y="142" width="86" height="78"/>
-        <rect x="1048" y="120" width="152" height="100"/>
-      </g>
+      <!-- 窗灯 -->
       <g class="spLights">
-        <rect class="spWin" style="--d:.7s"  x="18"  y="134" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.5s" x="44"  y="158" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.1s" x="66"  y="132" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.9s" x="30"  y="186" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.3s" x="116" y="164" width="7" height="10"/>
-        <rect class="spWin" style="--d:.9s"  x="150" y="178" width="7" height="10"/>
-        <rect class="spWin" style="--d:.8s"  x="206" y="112" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.6s" x="232" y="140" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.2s" x="262" y="118" width="7" height="10"/>
-        <rect class="spWin spWinFlick" style="--d:2.0s" x="240" y="190" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.4s" x="210" y="168" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.7s" x="316" y="168" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.0s" x="344" y="184" width="7" height="10"/>
-        <rect class="spWin" style="--d:.85s" x="390" y="146" width="7" height="10"/>
-        <rect class="spWin spWinLit spWinFlick" style="--d:1.85s" x="420" y="172" width="9" height="12"/>
-        <rect class="spWin" style="--d:1.25s" x="452" y="140" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.75s" x="398" y="196" width="7" height="10"/>
-        <rect class="spWin" style="--d:.75s"  x="506" y="104" width="7" height="10"/>
-        <rect class="spWin spWinLit" style="--d:1.95s" x="536" y="132" width="9" height="12"/>
-        <rect class="spWin" style="--d:1.15s" x="566" y="110" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.55s" x="520" y="180" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.35s" x="556" y="158" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.05s" x="616" y="162" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.45s" x="640" y="178" width="7" height="10"/>
-        <rect class="spWin" style="--d:.95s"  x="686" y="132" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.65s" x="716" y="158" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.3s"  x="744" y="136" width="7" height="10"/>
-        <rect class="spWin spWinFlick" style="--d:2.1s" x="700" y="190" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.5s"  x="790" y="172" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.15s" x="814" y="186" width="7" height="10"/>
-        <rect class="spWin" style="--d:.8s"   x="864" y="120" width="7" height="10"/>
-        <rect class="spWin spWinLit" style="--d:2.15s" x="1098" y="164" width="9" height="12"/>
-        <rect class="spWin" style="--d:1.2s"  x="926" y="124" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.8s"  x="978" y="158" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.4s"  x="1006" y="174" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.0s"  x="1022" y="150" width="7" height="10"/>
-        <rect class="spWin" style="--d:.9s"   x="1068" y="138" width="7" height="10"/>
-        <rect class="spWin" style="--d:1.6s"  x="1128" y="140" width="7" height="10"/>
-        <rect class="spWin spWinFlick" style="--d:2.05s" x="1158" y="182" width="7" height="10"/>
+        <rect class="spWin" style="--d:.8s"  x="30"  y="180" width="7" height="10"/>
+        <rect class="spWin spWinFlick" style="--d:2.0s" x="52"  y="180" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.2s" x="74"  y="180" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.5s" x="52"  y="162" width="7" height="9"/>
+        <rect class="spWin" style="--d:.9s"  x="134" y="185" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.4s" x="162" y="185" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.1s" x="214" y="182" width="7" height="10"/>
+        <rect class="spWin spWinFlick" style="--d:2.1s" x="238" y="182" width="7" height="10"/>
+        <rect class="spWin" style="--d:.75s" x="296" y="182" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.3s" x="318" y="182" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.85s" x="305" y="158" width="7" height="8"/>
+        <rect class="spWin" style="--d:1.0s" x="374" y="181" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.6s" x="402" y="181" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.15s" x="492" y="165" width="8" height="11"/>
+        <rect class="spWin spWinLit" style="--d:1.95s" x="515" y="165" width="8" height="11"/>
+        <rect class="spWin" style="--d:1.35s" x="538" y="165" width="8" height="11"/>
+        <rect class="spWin" style="--d:1.7s" x="511" y="148" width="7" height="8"/>
+        <rect class="spWin" style="--d:.85s" x="614" y="184" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.45s" x="642" y="184" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.25s" x="694" y="180" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.05s" x="722" y="180" width="7" height="10"/>
+        <rect class="spWin spWinFlick" style="--d:1.75s" x="746" y="180" width="7" height="9"/>
+        <rect class="spWin spWinLit" style="--d:2.15s" x="713" y="161" width="7" height="8"/>
+        <rect class="spWin" style="--d:1.55s" x="797" y="186" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.9s" x="870" y="178" width="8" height="11"/>
+        <rect class="spWin spWinLit" style="--d:1.65s" x="897" y="178" width="8" height="11"/>
+        <rect class="spWin" style="--d:.95s" x="964" y="183" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.8s" x="990" y="183" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.3s" x="1014" y="183" width="7" height="9"/>
+        <rect class="spWin" style="--d:1.5s" x="1058" y="188" width="7" height="10"/>
+        <rect class="spWin spWinFlick" style="--d:2.05s" x="1082" y="188" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.0s" x="1140" y="182" width="7" height="10"/>
+        <rect class="spWin" style="--d:1.35s" x="1172" y="182" width="7" height="10"/>
       </g>
+      <!-- 窗棂 -->
+      <g class="spLattice">
+        <path d="M492,170 h8 M496,165 v11"/>
+        <path d="M515,170 h8 M519,165 v11"/>
+        <path d="M538,170 h8 M542,165 v11"/>
+        <path d="M870,183 h8 M874,178 v11"/>
+        <path d="M897,183 h8 M901,178 v11"/>
+        <path d="M305,162 h7 M308.5,158 v8"/>
+      </g>
+      <!-- 灯笼 -->
+      <g class="spLantG" style="--d:1.4s"><line class="spLantStr" x1="116" y1="170" x2="116" y2="179"/><circle class="spLant" cx="116" cy="183" r="4.2"/></g>
+      <g class="spLantG" style="--d:1.7s"><line class="spLantStr" x1="468" y1="156" x2="468" y2="164"/><circle class="spLant" cx="468" cy="168" r="4.2"/></g>
+      <g class="spLantG" style="--d:1.9s"><line class="spLantStr" x1="766" y1="170" x2="766" y2="174"/><circle class="spLant" cx="766" cy="178" r="4.2"/></g>
+      <g class="spLantG" style="--d:2.1s"><line class="spLantStr" x1="850" y1="168" x2="850" y2="173"/><circle class="spLant" cx="850" cy="177" r="4.2"/></g>
+      <!-- 水中倒影 -->
+      <g class="spRefls">
+        <rect class="spRefl" style="--d:1.7s" x="28" y="203" width="7" height="26" rx="3" fill="url(#spReflGrad)"/>
+        <rect class="spRefl" style="--d:2.0s" x="160" y="203" width="7" height="22" rx="3" fill="url(#spReflGrad)"/>
+        <rect class="spRefl" style="--d:2.3s" x="316" y="203" width="7" height="28" rx="3" fill="url(#spReflGrad)"/>
+        <rect class="spRefl" style="--d:2.0s" x="511" y="203" width="9" height="34" rx="3" fill="url(#spReflGrad)"/>
+        <rect class="spRefl" style="--d:2.5s" x="640" y="203" width="7" height="22" rx="3" fill="url(#spReflGrad)"/>
+        <rect class="spRefl" style="--d:2.2s" x="720" y="203" width="7" height="30" rx="3" fill="url(#spReflGrad)"/>
+        <rect class="spRefl" style="--d:2.4s" x="893" y="203" width="9" height="32" rx="3" fill="url(#spReflGrad)"/>
+        <rect class="spRefl" style="--d:2.6s" x="988" y="203" width="7" height="26" rx="3" fill="url(#spReflGrad)"/>
+        <rect class="spRefl" style="--d:2.5s" x="1168" y="203" width="7" height="24" rx="3" fill="url(#spReflGrad)"/>
+      </g>
+      <!-- 炊烟一缕 -->
+      <path class="spSmoke" d="M739,150 q-7,-12 1,-24 q8,-12 3,-22"/>
+    </svg>
+  </div>
+  <!-- 前景梅枝 -->
+  <div class="spBranch" aria-hidden="true">
+    <svg viewBox="0 0 320 200">
+      <defs>
+        <g id="spPlum">
+          <ellipse cx="0" cy="-5" rx="3" ry="5.4" class="spPlumP"/>
+          <ellipse cx="0" cy="-5" rx="3" ry="5.4" class="spPlumP" transform="rotate(72)"/>
+          <ellipse cx="0" cy="-5" rx="3" ry="5.4" class="spPlumP" transform="rotate(144)"/>
+          <ellipse cx="0" cy="-5" rx="3" ry="5.4" class="spPlumP" transform="rotate(216)"/>
+          <ellipse cx="0" cy="-5" rx="3" ry="5.4" class="spPlumP" transform="rotate(288)"/>
+          <circle r="1.8" class="spPlumC"/>
+        </g>
+      </defs>
+      <path class="spTwig" stroke-width="7" d="M318,6 C300,14 292,12 276,22 C258,34 250,32 232,44"/>
+      <path class="spTwig" stroke-width="4" d="M276,22 C262,30 256,44 252,58"/>
+      <path class="spTwig" stroke-width="3.5" d="M232,44 C216,50 204,48 190,42"/>
+      <path class="spTwig" stroke-width="3" d="M252,58 C250,70 244,78 234,84"/>
+      <use href="#spPlum" transform="translate(190,42)" class="spBlossom"/>
+      <use href="#spPlum" transform="translate(234,84) scale(.9)" class="spBlossom"/>
+      <use href="#spPlum" transform="translate(255,60) scale(.8)" class="spBlossom"/>
+      <use href="#spPlum" transform="translate(206,47) scale(.7)" class="spBlossom"/>
+      <circle cx="224" cy="40" r="2.6" class="spBud"/>
+      <circle cx="245" cy="70" r="2.4" class="spBud"/>
     </svg>
   </div>
   <div class="spStage">
@@ -141,12 +357,36 @@
       <i class="spRipple r1"></i>
       <i class="spRipple r2"></i>
       <i class="spDrop"></i>
+      <i class="spImpact"></i>
+      <span class="spSplash">
+        <i style="--tx:-54px;--ty:-64px;--d:.62s"></i>
+        <i style="--tx:-20px;--ty:-82px;--d:.62s"></i>
+        <i style="--tx:22px; --ty:-88px;--d:.63s"></i>
+        <i style="--tx:58px; --ty:-66px;--d:.63s"></i>
+        <i style="--tx:74px; --ty:-34px;--d:.64s"></i>
+        <i style="--tx:-72px;--ty:-38px;--d:.64s"></i>
+        <i style="--tx:38px; --ty:-52px;--d:.66s"></i>
+        <i style="--tx:-38px;--ty:-54px;--d:.66s"></i>
+      </span>
       <h1 class="spTitle"><span>研</span><span>途</span><span>阅</span><span>读</span></h1>
     </div>
     <div class="spLine"></div>
     <div class="spSub">考研英语 · 书房</div>
-    <div class="spSeal"><b>研</b><b>途</b><b>阅</b><b>读</b><i class="spFlash"></i></div>
+    <div class="spSeal"><b>研</b><b>途</b><b>阅</b><b>读</b><i class="spFlash"></i>
+      <span class="spSealDust">
+        <i style="--tx:-28px;--ty:-30px;--d:3.66s"></i>
+        <i style="--tx:24px; --ty:-36px;--d:3.66s"></i>
+        <i style="--tx:38px; --ty:-12px;--d:3.68s"></i>
+        <i style="--tx:-40px;--ty:-14px;--d:3.68s"></i>
+        <i style="--tx:14px; --ty:-44px;--d:3.7s"></i>
+        <i style="--tx:-16px;--ty:-46px;--d:3.7s"></i>
+        <i style="--tx:46px; --ty:-28px;--d:3.72s"></i>
+        <i style="--tx:-46px;--ty:-32px;--d:3.72s"></i>
+      </span>
+    </div>
+    <div class="spVerse" aria-hidden="true"><span style="--d:4.05s">每</span><span style="--d:4.15s">一</span><span style="--d:4.25s">盏</span><span style="--d:4.35s">灯</span><span style="--d:4.45s">下</span><span style="--d:4.55s">，</span><span style="--d:4.65s">都</span><span style="--d:4.75s">有</span><span style="--d:4.85s">人</span><span style="--d:4.95s">在</span><span style="--d:5.05s">赶</span><span style="--d:5.15s">路</span></div>
   </div>
+  <div class="spVeil"></div>
 </div>
 
 <!-- 顶栏：题名 + 字号 + 主题 -->
@@ -597,8 +837,8 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=47"></script>
-<script src="assets/js/book.js?v=45"></script>
+<script src="assets/js/core.js?v=53"></script>
+<script src="assets/js/book.js?v=51"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){
