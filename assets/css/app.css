@@ -1514,6 +1514,10 @@ body:has(#splash){overflow:hidden;}
 .wrScore b{font-family:var(--serif); font-size:44px; color:var(--cinnabar);}
 .wrScore span{color:var(--muted); font-size:14px; margin-left:6px;}
 .wrSummary{font-size:14px; line-height:1.9; color:var(--ink);}
+.wrIdea{
+  font-size:13px; line-height:1.8; color:var(--ink); margin:6px 0; padding-left:18px; position:relative;
+}
+.wrIdea::before{content:"▸"; position:absolute; left:2px; color:var(--gold); font-weight:700;}
 .wrNote{background:var(--paper-2); border-radius:8px; padding:10px 12px; margin:8px 0; font-size:13.5px;}
 .wrOrig{font-family:var(--serif); color:var(--ink); font-style:italic;}
 .wrComment{color:var(--bad); margin-top:4px; font-size:12.5px;}

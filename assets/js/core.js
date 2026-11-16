@@ -958,19 +958,20 @@ function maybeExtend(s, p, usedTails){
 }
 
 /* 四档难度：四级 → 六级 → 考研标准 → 考研强化（paras 为段落分块，数据句并入相邻段） */
-/* 难度计划（2026-11-15 按官方考试大纲校准）：
-   四级仔细阅读 300-350 词/篇 → 计划 20 句 ≈ 340 词、5-6 段
-   六级仔细阅读 400-450 词/篇 → 计划 25 句 ≈ 430-460 词、6-7 段
-   考研一 Part A ≈400 词/篇（4 篇 1600 词）→ 计划 27-30 句 ≈ 400-520 词、7-8 段（练习留 5% 余量） */
+/* 难度计划（2026-11-15 校准 → 2026-11-17 用户反馈"量不达标"整体加量）：
+   四级 → 计划 26 句 ≈ 440 词、9 段
+   六级 → 计划 30 句 ≈ 500-530 词、10 段
+   考研一 Part A ≈400 词/篇（4 篇 1600 词）→ 练习加量：
+   标准 ≥32 句 ≈ 540 词、强化 ≥36 句 ≈ 610 词，宁多勿少 */
 const LEVELS = {
   cet4:{dmax:1, hard:false, simpleRatio:1,    tailP:0.15,
-        paras:[['intro',3],['bg',2],['develop',4],['develop',3],['data',1],['debate',4],['data',1],['close',2]]},
+        paras:[['intro',3],['bg',3],['develop',4],['develop',4],['data',2],['debate',4],['data',2],['debate',2],['close',2]]},
   cet6:{dmax:2, hard:false, simpleRatio:0.75, tailP:0.3,
-        paras:[['intro',3],['bg',3],['develop',4],['develop',3],['data',2],['develop',3],['debate',4],['data',1],['close',2]]},
+        paras:[['intro',3],['bg',3],['develop',4],['develop',4],['data',2],['develop',3],['debate',4],['data',2],['debate',3],['close',2]]},
   std: {dmax:2, hard:false, simpleRatio:0.6,  tailP:0.45,
-        paras:[['intro',3],['bg',2],['develop',4],['develop',3],['data',2],['develop',3],['debate',4],['data',1],['debate',3],['close',2]]},
+        paras:[['intro',3],['bg',3],['develop',4],['develop',4],['data',2],['develop',3],['debate',4],['data',2],['debate',4],['close',3]]},
   plus:{dmax:2, hard:true,  simpleRatio:0.4,  tailP:0.45,
-        paras:[['intro',3],['bg',2],['develop',5],['data',1],['develop',4],['data',1],['develop',3],['debate',5],['data',1],['debate',3],['close',2]]}
+        paras:[['intro',3],['bg',3],['develop',5],['data',2],['develop',4],['data',2],['develop',4],['debate',5],['data',1],['debate',4],['close',3]]}
 };
 /* 按难度选句型：四级只用简单句(d=1)；六级简单句优先；强化难句优先 */
 function pickTemplates(pool, n, cfg, used){
@@ -1628,21 +1629,20 @@ async function aiBuildReading(){
      考研标准 560+ 词 8 段+（考研词汇）、考研强化 620+ 词 8 段+。
      AI 产出不足即重试，仍不足则回落本地引擎（本地永远达标）。 */
   const diffNow=(typeof curDiff!=='undefined'&&curDiff)?curDiff:'std';
-  /* 对齐官方大纲（2026-11-15 校准）：
-     四级仔细阅读 300-350 词/篇（cet.neea.edu.cn 大纲）→ AI 目标 320-360 词、5-6 段
-     六级仔细阅读 400-450 词/篇 → AI 目标 420-460 词、6-7 段
-     考研一 Part A ≈400 词/篇（4 篇 1600 词，研招网）→ AI 目标 400-480 词、6-8 段
-     考研强化：练习留 10% 余量 → 440-520 词、7-8 段 */
+  /* 内容量上调（2026-11-17 用户反馈"生成量还是不达标"）：
+     官方大纲真题字数（四级 300-350 / 六级 400-450 / 考研 ≈400）为下限参考，
+     练习场景用户要求高于真题容量，宁多勿少：
+     四级 ≥400 词 6-8 段 / 六级 ≥500 词 7-9 段 / 考研标准 ≥540 词 8-10 段 / 强化 ≥600 词 8-11 段 */
   const SPEC={
-    cet4:{minW:320, minP:5, pTxt:'5-6个自然段', wTxt:'320-360词',
+    cet4:{minW:400, minP:6, pTxt:'6-8个自然段', wTxt:'400-460词',
           lvl:'大学英语四级（CET-4）难度：词汇控制在四级大纲（约4500词）范围内，以常用词和常见搭配为主，句式以简单句、并列句和常见从句为主，不使用生僻学术词'},
-    cet6:{minW:420, minP:6, pTxt:'6-7个自然段', wTxt:'420-460词',
+    cet6:{minW:500, minP:7, pTxt:'7-9个自然段', wTxt:'500-570词',
           lvl:'大学英语六级（CET-6）难度：使用六级核心词汇（约6000词范围）与常见学术表达，长难句适度（1-2重从句）'},
-    std: {minW:400, minP:6, pTxt:'6-8个自然段', wTxt:'400-480词',
+    std: {minW:540, minP:8, pTxt:'8-10个自然段', wTxt:'540-620词',
           lvl:'考研英语（一）难度：大纲5500词范围内的学术词汇，多重从句嵌套的长难句，分词结构、插入语、倒装等考研典型句式'},
-    plus:{minW:440, minP:7, pTxt:'7-8个自然段', wTxt:'440-520词',
+    plus:{minW:600, minP:8, pTxt:'8-11个自然段', wTxt:'600-680词',
           lvl:'考研强化难度：更高密度的长难句、低频学术词与抽象概念，句式转换灵活隐晦'}
-  }[diffNow]||{minW:400, minP:6, pTxt:'6-8个自然段', wTxt:'400-480词', lvl:'考研英语（一）难度：学术词汇丰富，长难句'};
+  }[diffNow]||{minW:540, minP:8, pTxt:'8-10个自然段', wTxt:'540-620词', lvl:'考研英语（一）难度：学术词汇丰富，长难句'};
   const MINW=SPEC.minW, MINP=SPEC.minP;
   const sys='你是考研英语命题专家。只输出严格JSON对象，禁止输出任何解释、前言或markdown代码块标记。';
   const base='随机生成一篇考研英语阅读理解文章并配套命题。要求：主题随机（科技/生态/社会/心理/经济/教育/医疗等），'+SPEC.pTxt+'，全文'+SPEC.wTxt+'（硬性标准：段数少于'+MINP+'段或总词数低于'+MINW+'词视为无效输出，将被判不合格；每段至少4-6句、每句15-30词，篇幅宁多勿少）；词汇与句式难度：'+SPEC.lvl+'（词汇难度必须与考试层级严格匹配，不得超纲或降级）；每段给准确中文翻译；另从文中选10-14个与该难度匹配的高频词给中文释义。'+
@@ -1682,14 +1682,14 @@ async function aiBuildReading(){
 }
 async function aiBuildCloze(){
   const avoid=aiHist('cloze');
-  /* 真题标准（官方大纲）：四级选词填空 200-250 词、六级 250-300 词、10 空。
-     分档下限：四级 200 / 六级 250 / 考研 240；词汇难度匹配层级，不足即重试/回落本地。 */
+  /* 内容量上调（2026-11-17 用户反馈）：真题字数为下限参考，练习加量——
+     四级 ≥250 词 / 六级 ≥300 词 / 考研 ≥290 词，10 空不变，不足即重试/回落本地。 */
   const lvNow=(typeof clozeLevel!=='undefined'&&clozeLevel)?clozeLevel:'cet4';
   const CLOZE_SPEC={
-    cet4:{minW:200, wTxt:'200-250词', lvl:'大学英语四级（CET-4）难度：词汇限于四级大纲（约4500词）范围，句式平实'},
-    cet6:{minW:250, wTxt:'250-300词', lvl:'大学英语六级（CET-6）难度：六级核心词汇（约6000词范围）、常见学术表达'},
-    kao: {minW:240, wTxt:'240-290词', lvl:'考研难度：大纲5500词范围内的学术词汇、多重从句嵌套的长难句'}
-  }[lvNow]||{minW:200, wTxt:'200-250词', lvl:'大学英语四级难度'};
+    cet4:{minW:250, wTxt:'250-310词', lvl:'大学英语四级（CET-4）难度：词汇限于四级大纲（约4500词）范围，句式平实'},
+    cet6:{minW:300, wTxt:'300-360词', lvl:'大学英语六级（CET-6）难度：六级核心词汇（约6000词范围）、常见学术表达'},
+    kao: {minW:290, wTxt:'290-350词', lvl:'考研难度：大纲5500词范围内的学术词汇、多重从句嵌套的长难句'}
+  }[lvNow]||{minW:250, wTxt:'250-310词', lvl:'大学英语四级难度'};
   const MINW=CLOZE_SPEC.minW;
   const sys='你是大学英语四六级与考研命题专家。只输出严格JSON对象，禁止输出任何解释或markdown代码块标记。';
   const base='随机生成一篇"15选10"选词填空题：随机主题短文（科技/社会/生态/经济/教育/健康等），4-6个自然段，全文'+CLOZE_SPEC.wTxt+'（硬性标准：短文低于'+MINW+'词视为无效输出，将被判不合格；每段至少3句）；词汇与句式难度：'+CLOZE_SPEC.lvl+'（与考试层级严格匹配）；文中按出现顺序挖10个空，用 __1__ 到 __10__ 标注；挖出的都是实词（名词/动词/形容词/副词），原词填回不需要变形；另给15个选项（10个正确答案+5个干扰项），每个给词性和中文释义，干扰项与正确词词性相近。';
@@ -2262,10 +2262,12 @@ $('#quizBtn').onclick=openQuiz;
 $('#qBack').onclick=()=>{ showReader(); };
 
 /* ---------- 15选10 选词填空 ---------- */
+/* 计划加量（2026-11-17 用户反馈"量不达标"）：每模板 ≈16 词 →
+   四级 16 模板 ≈ 255 词 / 六级 18 ≈ 285 词 / 考研 19 ≈ 300 词 */
 const CLOZE_LEVELS = {
-  cet4:{label:'四级', diff:'cet4', plan:[['intro',3],['bg',1],['develop',4],['debate',2],['data',1],['close',1]]},
-  cet6:{label:'六级', diff:'cet6', plan:[['intro',4],['bg',1],['develop',5],['debate',2],['close',1]]},
-  kao: {label:'考研', diff:'plus', plan:[['intro',4],['bg',2],['develop',5],['debate',2],['close',1]]}
+  cet4:{label:'四级', diff:'cet4', plan:[['intro',3],['bg',2],['develop',4],['develop',2],['debate',2],['data',2],['close',1]]},
+  cet6:{label:'六级', diff:'cet6', plan:[['intro',4],['bg',2],['develop',5],['develop',2],['debate',3],['data',1],['close',1]]},
+  kao: {label:'考研', diff:'plus', plan:[['intro',4],['bg',2],['develop',5],['develop',2],['debate',3],['data',2],['close',1]]}
 };
 let clozeLevel='cet4', cloze=null, clzSel=null;
 
@@ -3824,9 +3826,10 @@ function gmMatchStart(){
   mtOpen=[]; mtMoves=0; mtFound=0; mtLock=false; mtT0=0;
   const cards=[];
   mtPairs.forEach((p,i)=>{ cards.push({pair:i, kind:'w', text:p.w}); cards.push({pair:i, kind:'c', text:p.cn}); });
-  shuffle(cards);
+  /* shuffle 返回新数组（不原地改）：必须接收返回值，否则牌序固定为 词1/义1/词2/义2… 配对永远相邻 */
+  const deck=shuffle(cards);
   let html='<div class="gmHud"><span>步数 <b id="gmMtMoves">0</b></span><span>用时 <b id="gmMtTime">0s</b></span><span>配对 <b id="gmMtFound">0</b> / 8</span></div><div class="gmBoard" id="gmMtBoard">';
-  cards.forEach((c,i)=>{
+  deck.forEach((c,i)=>{
     html+='<button class="gmCard" data-i="'+i+'" data-pair="'+c.pair+'" data-kind="'+c.kind+'" aria-label="词牌">'+
       '<span class="gmInner"><span class="gmFace gmBack2">文</span><span class="gmFace gmFront">'+gmEsc(c.text)+'</span></span></button>';
   });
@@ -4486,7 +4489,7 @@ async function wrSubmit(){
   const usr='按考研英语'+(wrTopic.type==='big'?'大作文':'小作文')+'评分标准批改这篇学生作文。题目：'+wrTopic.topic+
     '\n学生作文（'+words+' 词）：\n'+text+
     '\n评分：满分 '+full+' 分；四个维度各 0-5 分：content 内容切题与深度 / language 语言准确性与词汇 / structure 结构与段落组织 / link 衔接连贯。'+
-    '\n输出JSON：{"total":数字,"dims":{"content":n,"language":n,"structure":n,"link":n},"summary":"中文总评 60-100 字","notes":[{"orig":"学生原句或片段","comment":"中文问题诊断（语法/用词/逻辑）","fix":"英文修改建议句"}] 最多6条只挑最重要的问题,"sample":"一篇高质量英文参考范文（'+(wrTopic.type==='big'?'180 词左右':'100 词左右')+'）"}';
+    '\n输出JSON：{"total":数字,"dims":{"content":n,"language":n,"structure":n,"link":n},"summary":"中文总评 100-160 字（先总述水平再点出最关键的得失）","notes":[{"orig":"学生原句或片段","comment":"中文问题诊断（语法/用词/逻辑）","fix":"英文修改建议句"}] 最多8条，覆盖语法/用词/逻辑三类问题,"ideas":["2-3 条中文提纲建议，告诉这篇作文该怎么写得更高分"],"sample":"一篇高质量英文参考范文（'+(wrTopic.type==='big'?'220-260 词，含 4 段完整结构':'120-150 词，三段式')+'）"}';
   let j=null;
   for(let attempt=0; attempt<2 && !j; attempt++){
     const txt=await aiChat(sys,usr,120000,120);
@@ -4503,16 +4506,20 @@ async function wrSubmit(){
     const v=Math.max(0,Math.min(5,Number(j.dims[d[0]])||0));
     return '<div class="pnBarRow"><span>'+d[1]+'</span><div class="pnBar"><i style="width:'+Math.round(v/5*100)+'%"></i></div><b>'+v+'/5</b></div>';
   }).join('');
-  const notes=(Array.isArray(j.notes)?j.notes:[]).slice(0,6).map(function(n){
+  const notes=(Array.isArray(j.notes)?j.notes:[]).slice(0,8).map(function(n){
     return '<div class="wrNote"><div class="wrOrig">'+gmEsc(n.orig||'')+'</div>'+
       '<div class="wrComment">🔍 '+gmEsc(n.comment||'')+'</div>'+
       (n.fix?('<div class="wrFix">✍️ '+gmEsc(n.fix)+'</div>'):'')+'</div>';
+  }).join('');
+  const ideas=(Array.isArray(j.ideas)?j.ideas:[]).slice(0,3).map(function(t,i){
+    return '<div class="wrIdea">'+gmEsc(String(t))+'</div>';
   }).join('');
   res.innerHTML=
     '<div class="wrScore"><b>'+score+'</b><span>/ '+full+' 分</span>'+
       '<div class="pnBarRow" style="margin-top:8px;"><div class="pnBar"><i style="width:'+Math.round(score/full*100)+'%"></i></div></div></div>'+
     '<div class="pnSec">四维度评分</div>'+dimsHtml+
     '<div class="pnSec">总评</div><div class="wrSummary">'+gmEsc(j.summary||'')+'</div>'+
+    (ideas?('<div class="pnSec">提纲建议</div>'+ideas):'')+
     (notes?('<div class="pnSec">逐句诊断</div>'+notes):'')+
     (j.sample?('<div class="pnSec">高分范文</div><div class="wrSample">'+gmEsc(j.sample)+'</div>'):'')+
     '<div class="wBtns"><button class="wBtn again" id="wrAgain">🔁 换一题再写</button></div>';
