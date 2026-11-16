@@ -648,9 +648,7 @@ audio.spRec{width:100%;margin-top:10px;}
 .readProg{height:3px;background:var(--chip);border-radius:99px;margin:0 2px 8px;overflow:hidden;}
 #readProgBar{height:100%;width:0;background:linear-gradient(90deg,var(--gold),var(--cinnabar));border-radius:99px;transition:width .25s;}
 
-/* ---------- 场景切换淡入 ---------- */
-@keyframes sceneIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
-#stage > section{animation:sceneIn .18s ease both;}
+
 
 /* ---------- 词形还原 ---------- */
 .wpBase{margin-top:4px;font-size:11px;color:var(--muted);}
