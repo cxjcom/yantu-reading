@@ -1,31 +1,102 @@
 /* =====================================================
-   研途阅读 · 动效包系统 v3（motion.css）
+   研途阅读 · 动效包系统 v4「动漫开镜」（motion.css）
    动效语法源自 ui2v-motions 库（back.out 弹性 / expo.out 收束 /
-   y 轴位移 / scale 0.9-0.94 入场）
-   每个功能一个专属动效签名，由 motion.js 编排（WAAPI），
-   本文件承载 CSS 侧的签名微动效与常驻交互反馈
+   大幅位移 / squash & stretch 卡通物理）
+   每个功能一个专属动效签名 + 一幕转场特效：
+   墨斩 / 漫画集中线 / 星芒爆散 / 墨瓣飘落
+   由 motion.js 编排（WAAPI），本文件承载特效层与常驻微动效
    ===================================================== */
 :root{
   --m-dur-fast:0.35s;
   --m-dur:0.55s;
   --m-dur-slow:0.75s;
   --m-ease-out:cubic-bezier(0.22, 1, 0.36, 1);      /* ≈ expo/power2 out */
-  --m-ease-back:cubic-bezier(0.34, 1.56, 0.64, 1);  /* ≈ back.out(1.4) */
+  --m-ease-back:cubic-bezier(0.34, 1.8, 0.64, 1);   /* ≈ back.out(1.8) 动漫回弹 */
   --m-ease-soft:cubic-bezier(0.4, 0.1, 0.3, 1);
 }
 
-/* ---------- 场景级方向性转场（前进从右 / 返回从左） ---------- */
-@keyframes mSceneFwd{from{opacity:0;transform:translateX(26px);}to{opacity:1;transform:none;}}
-@keyframes mSceneBack{from{opacity:0;transform:translateX(-26px);}to{opacity:1;transform:none;}}
+/* ---------- 转场特效层（播完自毁，永不拦截点击） ---------- */
+#mFx{position:fixed;inset:0;z-index:110;pointer-events:none;overflow:hidden;}
+
+/* ---------- 墨斩：斜向笔刷横扫（阅读/长篇/翻译） ---------- */
+.mFxInk{position:absolute;inset:-12% -30%;opacity:0;}
+.mFxInk.a{
+  background:linear-gradient(104deg, transparent 34%, rgba(181,56,47,.16) 46%, rgba(24,18,10,.24) 54%, transparent 66%);
+  animation:mFxInkA .62s cubic-bezier(.6,0,.2,1) both;
+}
+.mFxInk.b{
+  background:linear-gradient(99deg, transparent 40%, rgba(201,143,45,.14) 52%, transparent 62%);
+  animation:mFxInkA .72s cubic-bezier(.6,0,.2,1) .07s both;
+}
+@keyframes mFxInkA{
+  0%{transform:translateX(-115%) skewX(-6deg);opacity:0;}
+  22%{opacity:1;}
+  100%{transform:translateX(115%) skewX(-6deg);opacity:0;}
+}
+
+/* ---------- 漫画集中线 + 冲击闪帧（做题/模考/跟读） ---------- */
+.mFxSpeed{
+  position:absolute;inset:0;
+  background:repeating-conic-gradient(from 0deg at 50% 42%, rgba(20,16,10,.15) 0deg 1.1deg, transparent 1.1deg 6.5deg);
+  -webkit-mask-image:radial-gradient(circle at 50% 42%, transparent 0 26%, #000 64%);
+  mask-image:radial-gradient(circle at 50% 42%, transparent 0 26%, #000 64%);
+  animation:mFxSpeedA .46s var(--m-ease-out) both;
+}
+@keyframes mFxSpeedA{
+  0%{transform:scale(1.28);opacity:0;}
+  28%{opacity:.95;}
+  100%{transform:scale(1);opacity:0;}
+}
+.mFxFlash{position:absolute;inset:0;background:#f7f1e2;animation:mFxFlashA .18s ease-out both;}
+@keyframes mFxFlashA{0%{opacity:0;}35%{opacity:.5;}100%{opacity:0;}}
+
+/* ---------- 星芒爆散 + 冲击环（背词/游戏角/CTA 点击） ---------- */
+.mFxStar{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);color:var(--cinnabar);text-shadow:0 0 8px rgba(201,143,45,.4);animation:mFxStarA .58s var(--m-ease-out) both;}
+@keyframes mFxStarA{
+  0%{transform:translate(-50%,-50%) scale(.4) rotate(0deg);opacity:1;}
+  65%{opacity:1;}
+  100%{transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0) rotate(var(--rot));opacity:0;}
+}
+.mFxRing{position:absolute;width:150px;height:150px;margin:-75px 0 0 -75px;border-radius:50%;border:2.5px solid rgba(181,56,47,.55);animation:mFxRingA .52s var(--m-ease-out) both;}
+.mFxRing.small{width:90px;height:90px;margin:-45px 0 0 -45px;border-width:2px;}
+@keyframes mFxRingA{0%{transform:scale(.25);opacity:1;}100%{transform:scale(1.7);opacity:0;}}
+
+/* ---------- 墨瓣飘落（案头/阅读室氛围层，随场景显隐） ---------- */
+.mAmbient{position:fixed;inset:0;z-index:60;pointer-events:none;overflow:hidden;}
+.mPetal{
+  position:absolute;top:-16px;display:block;
+  border-radius:62% 38% 60% 40%;
+  will-change:transform,opacity;
+  animation:mPetalFall var(--pd,12s) linear infinite var(--pdelay,0s);
+}
+@keyframes mPetalFall{
+  0%{transform:translate(0,-20px) rotate(0deg);opacity:0;}
+  7%{opacity:.9;}
+  46%{transform:translate(var(--sw,30px),52vh) rotate(168deg);}
+  88%{opacity:.55;}
+  100%{transform:translate(calc(var(--sw,30px)*-.6),108vh) rotate(330deg);opacity:0;}
+}
+
+/* ---------- 场景级方向性转场（前进从右 / 返回从左，幅度加大） ---------- */
+@keyframes mSceneFwd{from{opacity:0;transform:translateX(32px) scale(.99);}to{opacity:1;transform:none;}}
+@keyframes mSceneBack{from{opacity:0;transform:translateX(-32px) scale(.99);}to{opacity:1;transform:none;}}
 #stage > section.m-scene-fwd{animation:mSceneFwd var(--m-dur) var(--m-ease-out) both;}
 #stage > section.m-scene-back{animation:mSceneBack var(--m-dur) var(--m-ease-out) both;}
 
-/* ---------- 按压回弹（全局微交互） ---------- */
-.inkBtn,.secondary,.chipBtn,.iconBtn,.ttsBtn,.stationeryItem,.tabBtn,.shelfItem{
-  transition:transform .12s var(--m-ease-out), box-shadow .15s ease, background .15s ease, color .15s ease, border-color .15s ease;
+/* ---------- 场景题名：✦ 星标旋转落定（每次开镜重播） ---------- */
+.sceneTitle::before,.meTitle::before{
+  content:"✦";display:inline-block;margin-right:7px;color:var(--gold);
+  font-size:12px;vertical-align:2px;
+  animation:mSpinIn .55s var(--m-ease-back) both;
 }
-.inkBtn:active,.iconBtn:active{transform:scale(.9) rotate(-2deg);}
-.chipBtn:active,.qOpt:active{transform:scale(.96);}
+@keyframes mSpinIn{0%{transform:rotate(-180deg) scale(0);opacity:0;}100%{transform:rotate(0deg) scale(1);opacity:1;}}
+
+/* ---------- 按压回弹（卡通挤压） ---------- */
+.inkBtn,.secondary,.chipBtn,.iconBtn,.ttsBtn,.stationeryItem,.tabBtn,.shelfItem{
+  transition:transform .14s var(--m-ease-back), box-shadow .15s ease, background .15s ease, color .15s ease, border-color .15s ease;
+}
+.inkBtn:active,.iconBtn:active{transform:scale(.88) rotate(-3deg);}
+.chipBtn:active,.qOpt:active{transform:scale(.94) translateY(1px);}
 
 /* ---------- hover 浮起（物件可拿取的感觉） ---------- */
 .statTiles .tile,.favCard,.gmCard,.stationeryItem,.lrItem,.qOpt{
@@ -57,9 +128,11 @@
 @keyframes mLeafFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-3px);}}
 body.flip-on .leaf{animation:mLeafFloat 5.2s ease-in-out infinite;transform-origin:top center;}
 
-/* ---------- 点词弹层：弹簧入场 ---------- */
+/* ---------- 点词弹层 / 结算面板：弹簧入场 ---------- */
 @keyframes mPop{0%{opacity:0;transform:scale(.86) translateY(8px);}62%{opacity:1;transform:scale(1.03) translateY(-2px);}100%{opacity:1;transform:scale(1) translateY(0);}}
 .wordPop{animation:mPop var(--m-dur-fast) var(--m-ease-back) both;}
+.wDone{animation:mPop .45s var(--m-ease-back) both;}
+.trRes{animation:mPop .4s var(--m-ease-back) both;}
 
 /* ---------- toast：上滑带回弹 ---------- */
 @keyframes mToast{0%{opacity:0;transform:translateX(-50%) translateY(14px) scale(.94);}60%{opacity:1;transform:translateX(-50%) translateY(-3px) scale(1.01);}100%{opacity:1;transform:translateX(-50%) translateY(0) scale(1);}}
@@ -103,4 +176,5 @@ body.flip-on .leaf{animation:mLeafFloat 5.2s ease-in-out infinite;transform-orig
 /* ---------- 红线：尊重系统减弱动效 ---------- */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01s !important;animation-iteration-count:1 !important;transition-duration:.01s !important;}
+  .mAmbient{display:none !important;}
 }
