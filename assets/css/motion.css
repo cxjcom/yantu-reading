@@ -1,9 +1,10 @@
 /* =====================================================
-   研途阅读 · 动效包系统 v4「动漫开镜」（motion.css）
-   动效语法源自 ui2v-motions 库（back.out 弹性 / expo.out 收束 /
-   大幅位移 / squash & stretch 卡通物理）
+   研途阅读 · 动效包系统 v5「印刷开镜」（motion.css）
+   动效语法源自 ui2v-motions 动效包 + code-mv-render 运动语法：
+   错峰分层 / 禁止纯透明度（印刷揭示）/ 字体遮罩（逐字/乱码收敛）/
+   快速运动带墨晕 / squash & stretch 卡通物理
    每个功能一个专属动效签名 + 一幕转场特效：
-   墨斩 / 漫画集中线 / 星芒爆散 / 墨瓣飘落
+   墨斩 / 漫画集中线 / 星芒爆散 / 墨瓣飘落 / 纸面擦除
    由 motion.js 编排（WAAPI），本文件承载特效层与常驻微动效
    ===================================================== */
 :root{
@@ -77,11 +78,34 @@
   100%{transform:translate(calc(var(--sw,30px)*-.6),108vh) rotate(330deg);opacity:0;}
 }
 
-/* ---------- 场景级方向性转场（前进从右 / 返回从左，幅度加大） ---------- */
-@keyframes mSceneFwd{from{opacity:0;transform:translateX(32px) scale(.99);}to{opacity:1;transform:none;}}
-@keyframes mSceneBack{from{opacity:0;transform:translateX(-32px) scale(.99);}to{opacity:1;transform:none;}}
+/* ---------- 场景级方向性转场（前进从右 / 返回从左）+ 纸面擦除揭示 ----------
+   ::after 纸色遮罩随 clip-path 擦除退场——内容像印刷一样被"刮"出来；
+   遮罩只在动画期存在（opacity 收 0），不拦截点击、不残留 */
+#stage > section{position:relative;}
+@keyframes mSceneFwd{from{opacity:0;transform:translateX(24px) scale(.99);}to{opacity:1;transform:none;}}
+@keyframes mSceneBack{from{opacity:0;transform:translateX(-24px) scale(.99);}to{opacity:1;transform:none;}}
 #stage > section.m-scene-fwd{animation:mSceneFwd var(--m-dur) var(--m-ease-out) both;}
 #stage > section.m-scene-back{animation:mSceneBack var(--m-dur) var(--m-ease-out) both;}
+#stage > section.m-scene-fwd::after,#stage > section.m-scene-back::after{
+  content:"";position:absolute;inset:0;z-index:3;pointer-events:none;
+  background:linear-gradient(100deg,var(--paper) 42%,var(--paper-2) 88%);
+  animation:mWipeFwd .52s var(--m-ease-out) both;
+}
+#stage > section.m-scene-back::after{animation-name:mWipeBack;}
+#stage > section.m-scene-fwd::after{background:linear-gradient(80deg,var(--paper-2) 12%,var(--paper) 58%);}
+@keyframes mWipeFwd{
+  0%{clip-path:inset(0 0% 0 0);opacity:1;}
+  86%{opacity:1;}
+  100%{clip-path:inset(0 100% 0 0);opacity:0;}
+}
+@keyframes mWipeBack{
+  0%{clip-path:inset(0 0 0 0%);opacity:1;}
+  86%{opacity:1;}
+  100%{clip-path:inset(0 0 0 100%);opacity:0;}
+}
+
+/* ---------- 题名逐字显影（typed） ---------- */
+.mT{display:inline-block;will-change:transform,filter;}
 
 /* ---------- 场景题名：✦ 星标旋转落定（每次开镜重播） ---------- */
 .sceneTitle::before,.meTitle::before{
