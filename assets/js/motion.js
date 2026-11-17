@@ -454,6 +454,14 @@
       }).observe(el, {childList:true});
     });
   }
+  /* ---------- MV 渲染风格：全局胶片质感层（扫描线/暗角/颗粒闪烁/取景框角标） ---------- */
+  function ensureFilm(){
+    if(document.getElementById('mFilm')) return;
+    const f = document.createElement('div');
+    f.id = 'mFilm';
+    document.body.appendChild(f);
+  }
+
   function init(){
     lastScene = null;                                      /* null 强制首屏也走一次完整开镜（v3/v4 首屏动效从未触发的根因） */
     const obs = new MutationObserver(function(){ setTimeout(onSwitch, 0); });
@@ -466,6 +474,7 @@
     armImpact();
     armDetails();
     armShelfEQ();
+    ensureFilm();
     onSwitch();                                            /* 首屏：案头专属入场 */
   }
   if(document.readyState === 'loading'){

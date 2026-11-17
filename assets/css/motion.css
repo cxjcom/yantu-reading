@@ -232,8 +232,66 @@ body.flip-on .leaf{animation:mLeafFloat 5.2s ease-in-out infinite;transform-orig
 @keyframes mAnsFlash{0%,100%{background:rgba(74,124,70,.10);}35%{background:rgba(74,124,70,.26);}}
 .lrPara.lrAnswer{animation:mAnsFlash 1.1s ease both;}
 
+/* =====================================================
+   MV 渲染风格（v7 视觉皮肤）：整帧按"渲染成片"处理
+   胶片颗粒闪烁 · 扫描线 · 暗角 · 取景框角标 · 版画套色错位 · 标题辉光
+   前景层 #mFilm 盖在全部内容之上（z 500，pointer-events:none），
+   开屏 splash（z 999）除外；颗粒动画被 prefers-reduced-motion 自动冻结
+   ===================================================== */
+#mFilm{
+  position:fixed;inset:0;z-index:500;pointer-events:none;
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.045) 0 1px, transparent 1px 3px),
+    radial-gradient(125% 95% at 50% 44%, transparent 58%, rgba(12,9,5,.17) 100%);
+}
+html[data-theme="dark"] #mFilm{
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.06) 0 1px, transparent 1px 3px),
+    radial-gradient(125% 95% at 50% 44%, transparent 54%, rgba(0,0,0,.30) 100%);
+}
+/* 取景框四角标（朱砂 L 形，机位感） */
+#mFilm::before{
+  content:"";position:absolute;inset:12px;opacity:.4;
+  background:
+    linear-gradient(var(--cinnabar),var(--cinnabar)) left 0 top 0/20px 2px,
+    linear-gradient(var(--cinnabar),var(--cinnabar)) left 0 top 0/2px 20px,
+    linear-gradient(var(--cinnabar),var(--cinnabar)) right 0 top 0/20px 2px,
+    linear-gradient(var(--cinnabar),var(--cinnabar)) right 0 top 0/2px 20px,
+    linear-gradient(var(--cinnabar),var(--cinnabar)) left 0 bottom 0/20px 2px,
+    linear-gradient(var(--cinnabar),var(--cinnabar)) left 0 bottom 0/2px 20px,
+    linear-gradient(var(--cinnabar),var(--cinnabar)) right 0 bottom 0/20px 2px,
+    linear-gradient(var(--cinnabar),var(--cinnabar)) right 0 bottom 0/2px 20px;
+  background-repeat:no-repeat;
+}
+/* 胶片颗粒闪烁（前景噪点，steps 跳变模拟胶片颗粒运动） */
+#mFilm::after{
+  content:"";position:absolute;inset:-120px;opacity:.055;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.6'/%3E%3C/svg%3E");
+  animation:mGrain .9s steps(1,end) infinite;
+}
+@keyframes mGrain{
+  0%{transform:translate(0,0);}
+  17%{transform:translate(-34px,22px);}
+  34%{transform:translate(28px,-30px);}
+  51%{transform:translate(-20px,-38px);}
+  68%{transform:translate(38px,18px);}
+  85%{transform:translate(-44px,6px);}
+  100%{transform:translate(0,0);}
+}
+
+/* ---------- 版画套色错位：卡片印出朱砂偏移色版（替代柔和阴影） ---------- */
+.wCard,.meCard,.statTiles .tile,.favCard,.clzChip,.qOpt,.stationeryItem{
+  box-shadow:3px 3px 0 rgba(181,56,47,.20);
+}
+
+/* ---------- 标题辉光：serif 题名镀一层金晕（MV 后期 bloom） ---------- */
+.bookTitle,.sceneTitle,.meTitle,.deskGreet h1{
+  text-shadow:0 0 16px rgba(201,143,45,.30), 0 0 2px rgba(201,143,45,.22);
+}
+
 /* ---------- 红线：尊重系统减弱动效 ---------- */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01s !important;animation-iteration-count:1 !important;transition-duration:.01s !important;}
   .mAmbient{display:none !important;}
+  #mFilm::after{animation:none !important;}
 }
