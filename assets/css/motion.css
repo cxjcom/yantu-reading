@@ -62,6 +62,40 @@
 .mFxRing.small{width:90px;height:90px;margin:-45px 0 0 -45px;border-width:2px;}
 @keyframes mFxRingA{0%{transform:scale(.25);opacity:1;}100%{transform:scale(1.7);opacity:0;}}
 
+/* ---------- MV 构架：章节卷卡（切场景字卡，slam → hold → 墨化擦除，3 拍） ---------- */
+.mFxCard{
+  position:absolute;left:50%;top:50%;text-align:center;
+  background:linear-gradient(160deg,var(--paper),var(--paper-2));
+  border:1px solid rgba(181,56,47,.35);border-radius:10px;
+  padding:20px 46px 16px;box-shadow:0 24px 70px rgba(0,0,0,.4);
+  transform:translate(-50%,-50%);
+  animation:mFxCardA 1.38s var(--m-ease-out) both;
+}
+.mFxCard i{display:block;font-style:normal;font-size:12px;letter-spacing:7px;text-indent:7px;color:var(--cinnabar);margin-bottom:8px;font-weight:700;}
+.mFxCard b{font-family:var(--serif);font-size:30px;font-weight:800;letter-spacing:10px;text-indent:10px;color:var(--ink);white-space:nowrap;}
+.mFxCard u{display:block;width:130px;height:2px;margin:10px auto 7px;background:linear-gradient(90deg,transparent,var(--cinnabar),transparent);}
+.mFxCard s{text-decoration:none;font-size:10px;letter-spacing:5px;text-indent:5px;color:var(--muted);}
+@keyframes mFxCardA{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(1.55);filter:blur(9px);}
+  15%{opacity:1;transform:translate(-50%,-50%) scale(1);filter:blur(0);}
+  74%{opacity:1;transform:translate(-50%,-50%) scale(1);clip-path:inset(0 0 0 0);}
+  100%{opacity:0;transform:translate(-50%,-50%) scale(.97);clip-path:inset(0 0 100% 0);}
+}
+
+/* ---------- MV 构架：电影黑边（letterbox，2 拍开合） ---------- */
+.mFxBarT,.mFxBarB{position:absolute;left:0;right:0;height:32px;background:rgba(10,8,4,.95);animation:mFxBarA .92s var(--m-ease-out) both;}
+.mFxBarT{top:0;transform-origin:top center;}
+.mFxBarB{bottom:0;transform-origin:bottom center;}
+@keyframes mFxBarA{0%{transform:scaleY(0);}24%{transform:scaleY(1);}72%{transform:scaleY(1);}100%{transform:scaleY(0);}}
+
+/* ---------- MV 构架：书架音浪（播放中曲目的 EQ 指示） ---------- */
+.shelfItem{position:relative;}
+.mEq{position:absolute;right:10px;top:50%;margin-top:-8px;display:flex;align-items:flex-end;gap:2px;height:14px;}
+.mEq i{width:3px;height:14px;background:var(--cinnabar);border-radius:1px;transform-origin:bottom center;animation:mEqY .58s ease-in-out infinite alternate;}
+.mEq i:nth-child(2){background:var(--gold);animation-delay:.14s;}
+.mEq i:nth-child(3){animation-delay:.28s;}
+@keyframes mEqY{from{transform:scaleY(.3);}to{transform:scaleY(1);}}
+
 /* ---------- 墨瓣飘落（案头/阅读室氛围层，随场景显隐） ---------- */
 .mAmbient{position:fixed;inset:0;z-index:60;pointer-events:none;overflow:hidden;}
 .mPetal{
@@ -80,10 +114,11 @@
 
 /* ---------- 场景级方向性转场（前进从右 / 返回从左）+ 纸面擦除揭示 ----------
    ::after 纸色遮罩随 clip-path 擦除退场——内容像印刷一样被"刮"出来；
+   镜头落定 punch-in：入场轻微放大后收束（MV 切镜的镜头落定感）；
    遮罩只在动画期存在（opacity 收 0），不拦截点击、不残留 */
 #stage > section{position:relative;}
-@keyframes mSceneFwd{from{opacity:0;transform:translateX(24px) scale(.99);}to{opacity:1;transform:none;}}
-@keyframes mSceneBack{from{opacity:0;transform:translateX(-24px) scale(.99);}to{opacity:1;transform:none;}}
+@keyframes mSceneFwd{from{opacity:0;transform:translateX(24px) scale(1.02);}to{opacity:1;transform:none;}}
+@keyframes mSceneBack{from{opacity:0;transform:translateX(-24px) scale(1.02);}to{opacity:1;transform:none;}}
 #stage > section.m-scene-fwd{animation:mSceneFwd var(--m-dur) var(--m-ease-out) both;}
 #stage > section.m-scene-back{animation:mSceneBack var(--m-dur) var(--m-ease-out) both;}
 #stage > section.m-scene-fwd::after,#stage > section.m-scene-back::after{

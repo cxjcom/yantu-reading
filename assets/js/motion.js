@@ -181,6 +181,35 @@
     }
   }
 
+  /* ---------- MV 构架：章节卷卡 + 电影黑边 ----------
+     每次切场景打一张「第 N 卷 · 场景名」字卡（slam → hold → 墨化擦除），
+     上下 letterbox 黑边随之开合；时长全部落在 0.46s 拍点网格上 */
+  function playCard(name, chapter){
+    const fx = ensureFx();
+    fx.appendChild(fxNode('mFxBarT', 1000));
+    fx.appendChild(fxNode('mFxBarB', 1000));
+    const c = fxNode('mFxCard', 1500);
+    c.innerHTML = '<i>第 ' + chapter + ' 卷</i><b></b><u></u><s>研途阅读 · 书房案头</s>';
+    c.querySelector('b').textContent = name || '书房';
+    fx.appendChild(c);
+  }
+
+  /* ---------- MV 构架：书架音浪（书架=播放列表，当前场景=播放中曲目） ---------- */
+  function armShelfEQ(){
+    const shelf = document.getElementById('shelf');
+    if(!shelf) return;
+    function sync(){
+      shelf.querySelectorAll('.shelfItem').forEach(function(it){
+        const on = it.classList.contains('on');
+        let eq = it.querySelector('.mEq');
+        if(on && !eq){ eq = document.createElement('span'); eq.className = 'mEq'; eq.innerHTML = '<i></i><i></i><i></i>'; it.appendChild(eq); }
+        if(!on && eq) eq.remove();
+      });
+    }
+    new MutationObserver(sync).observe(shelf, {subtree:true, attributes:true, attributeFilter:['class']});
+    sync();
+  }
+
   /* ---------- CTA 冲击环：研墨提笔按下时在点击点炸开 ---------- */
   function spawnRing(x, y, small){
     const fx = ensureFx();
@@ -373,6 +402,7 @@
     void sec.offsetWidth;                                   /* 重置转场动画 */
     sec.classList.add(dir === 'back' ? 'm-scene-back' : 'm-scene-fwd');
     playFx(SCENE_FX[id]);
+    playCard((document.getElementById('sceneTitle') || {}).textContent, ORDER[id] + 1);
     runPack(PACKS[id], 50);
     /* 题名逐字显影（场景题名 / 书房题名 / 案头题名 / 顶栏题名） */
     setTimeout(function(){
@@ -435,6 +465,7 @@
     plantAmbient();
     armImpact();
     armDetails();
+    armShelfEQ();
     onSwitch();                                            /* 首屏：案头专属入场 */
   }
   if(document.readyState === 'loading'){
