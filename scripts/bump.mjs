@@ -12,12 +12,16 @@ let sw = readFileSync('sw.js', 'utf8');
 const c = sw.match(/'yt-pwa-v(\d+)'/);
 if (!c) { console.error('sw.js 中未找到 CACHE 版本'); process.exit(1); }
 sw = sw.replace(c[0], `'yt-pwa-v${Number(c[1]) + 1}'`);
-/* 预缓存清单以 index.html 的实际引用为准，杜绝两边版本脱钩 */
+/* 预缓存清单以 index.html 的实际引用为准，杜绝两边版本脱钩
+   （2026-11-18 修复：motion.css/motion.js 加入同步名单——此前漏同步导致
+    预缓存版本与 index 脱钩，离线首装用户拿到 404 的动效文件） */
 const vmap = {};
-for (const m of html.matchAll(/(app\.css|core\.js|book\.js)\?v=(\d+)/g)) vmap[m[1]] = Number(m[2]);
+for (const m of html.matchAll(/(app\.css|core\.js|book\.js|motion\.css|motion\.js)\?v=(\d+)/g)) vmap[m[1]] = Number(m[2]);
 sw = sw.replace(/(app\.css\?v=)(\d+)/g, (m0, p) => p + vmap['app.css']);
 sw = sw.replace(/(core\.js\?v=)(\d+)/g, (m0, p) => p + vmap['core.js']);
 sw = sw.replace(/(book\.js\?v=)(\d+)/g, (m0, p) => p + vmap['book.js']);
+sw = sw.replace(/(motion\.css\?v=)(\d+)/g, (m0, p) => p + (vmap['motion.css'] ?? m0.match(/(\d+)$/)[1]));
+sw = sw.replace(/(motion\.js\?v=)(\d+)/g, (m0, p) => p + (vmap['motion.js'] ?? m0.match(/(\d+)$/)[1]));
 writeFileSync('sw.js', sw);
 
 console.log('已升级：index.html 资源 ?v 各 +1 · SW 缓存 v' + (Number(c[1]) + 1) + '（预缓存已同步）');
