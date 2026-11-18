@@ -1357,14 +1357,15 @@ function aiLoadingShow(kind){
     if(s&&AI_BUSY) s.textContent=Math.round((Date.now()-AI_T0)/1000)+'s';
   },500);
 }
-function aiLoadingDone(ok,note){
+function aiLoadingDone(ok,note,label){
   if(AI_TMR){ clearInterval(AI_TMR); AI_TMR=null; }
   const el=document.getElementById('aiLoad'); if(!el) return;
   const card=el.querySelector('.aiCard');
   const k=document.getElementById('aiKind');
-  if(card) card.style.borderColor= ok? '#2e9e5b' : '#d9534f';
-  k.textContent= ok? '✅ AI 生成成功' : '❌ AI 生成失败'+(note?'（'+note+'）':'');
-  k.style.color= ok? '#2e9e5b' : '#d9534f';
+  /* label：自定义结果标签（本地兜底成功时给绿色成功语义，不红叉报丧） */
+  if(card) card.style.borderColor= (ok||label)? '#2e9e5b' : '#d9534f';
+  k.textContent= label || (ok? '✅ AI 生成成功' : '❌ AI 生成失败'+(note?'（'+note+'）':''));
+  k.style.color= (ok||label)? '#2e9e5b' : '#d9534f';
   const sp=el.querySelector('.spin'); if(sp) sp.style.display='none';
   const s2=document.getElementById('aiSec'); if(s2) s2.style.display='none';
   const cb=el.querySelector('.aiCard button'); if(cb) cb.style.display='none';
@@ -1436,6 +1437,11 @@ function aiDiagSummary(){
     return last.steps.map(function(s){ return s.ep+':'+s.st+(s.x?('('+s.x+')'):''); }).join(' · ').slice(0,60);
   }catch(e){ return ''; }
 }
+/* 兜底成功的措辞：本地顶上 = 交付成功，不再红叉报丧；两端点都没通过时附自检指引 */
+function aiFallbackNote(){
+  const d=aiDiagSummary();
+  return 'AI 未通'+(d?'（'+d+'）':'')+'，本地引擎顶上'+(d&&d.indexOf('ok')<0?'，可进 AI 设置跑端点自检':'');
+}
 window.__ytAiDiag=function(){ try{ return JSON.parse(localStorage.getItem('yt_aidiag')||'[]'); }catch(e){ return []; } };
 /* ---------- 端点健康记忆：限流冷却 / WB 最近成功，决定本轮谁上场 ---------- */
 function epHealth(){ try{ return JSON.parse(localStorage.getItem('yt_ephealth')||'{}'); }catch(e){ return {}; } }
@@ -1497,6 +1503,7 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   /* ② WB 云端：模型 id 优先用 localStorage 缓存（24h）——列表请求失败/超时不再把 WB 判死；
      无缓存才请求列表（12s 超时），仍失败则盲试 'auto'（历次实测必通） */
   let wbId='';
+  let wbBlind=false;              /* 列表被拦 ≠ 聊天被拦（手机运营商常见）：盲试 'auto'，失败也只花几秒 */
   let wbCachedIds=null;
   try{
     const c=JSON.parse(localStorage.getItem('yt_wbmodels')||'null');
@@ -1504,21 +1511,33 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   }catch(e){}
   if(wbCachedIds){ wbId=wbCachedIds[0]; }
   else if(WB_CLOUD){
-    try{
-      WB_MODELS=await Promise.race([
-        WB_CLOUD.llm.models.list(),
-        new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('list 超时')); },12000); })
-      ]);
-      if(!Array.isArray(WB_MODELS)) WB_MODELS=[];
-    }catch(e){ WB_MODELS=[]; }
-    const ids=WB_MODELS.filter(function(m){ return m&&m.disabled!==true; }).map(function(m){ return m.id; });
-    if(ids.length){
-      wbId=ids[0];
-      try{ localStorage.setItem('yt_wbmodels', JSON.stringify({t:now, ids:ids.slice(0,12)})); }catch(e){}
+    if(health.WB_LIST_FAIL && (now-health.WB_LIST_FAIL)<60000){
+      wbBlind=true;               /* 60s 内列表刚挂过：不再付 12s 挂起，直接盲试 */
+    }else{
+      try{
+        WB_MODELS=await Promise.race([
+          WB_CLOUD.llm.models.list(),
+          new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('list 超时')); },12000); })
+        ]);
+        if(!Array.isArray(WB_MODELS)) WB_MODELS=[];
+      }catch(e){ WB_MODELS=[]; }
+      const ids=WB_MODELS.filter(function(m){ return m&&m.disabled!==true; }).map(function(m){ return m.id; });
+      if(ids.length){
+        wbId=ids[0];
+        try{ localStorage.setItem('yt_wbmodels', JSON.stringify({t:now, ids:ids.slice(0,12)})); }catch(e){}
+      }else{
+        epHealthSet('WB_LIST_FAIL', now);
+        wbBlind=true;
+      }
     }
   }
   if(wbId && WB_CLOUD){
     tasks.push(wrap('WB:'+wbId, Date.now(), wbCloudChat(msgs,total,temp,wbId), {
+      win:function(){ epHealthSet('WB_OK', Date.now()); },
+      lose:function(){ epHealthSet('WB_FAIL', Date.now()); }
+    }));
+  }else if(wbBlind && WB_CLOUD){
+    tasks.push(wrap('WB:auto', Date.now(), wbCloudChat(msgs,Math.min(total,45000),temp,'auto'), {
       win:function(){ epHealthSet('WB_OK', Date.now()); },
       lose:function(){ epHealthSet('WB_FAIL', Date.now()); }
     }));
@@ -2304,7 +2323,7 @@ async function buildClozePassage(){
     var ai=null;
     try{ ai=await aiBuildCloze(); }catch(e){}
     if(ai){ aiLoadingDone(true); await aiLoadingWait(1300); aiLoadingHide(); showToast('✅ AI 生成成功'); }
-    else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1300); aiLoadingHide(); showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成'); }
+    else{ aiLoadingDone(false,'','✅ 已生成 · '+aiFallbackNote()); await aiLoadingWait(1300); aiLoadingHide(); showToast('✅ '+aiFallbackNote()); }
     if(ai){
       aiHistPush('cloze', ai.titleEn);
       cloze={kind:'ai', levelLabel:cl.label, title:ai.titleEn, titleCn:ai.titleCn,
@@ -2317,7 +2336,7 @@ async function buildClozePassage(){
       window.scrollTo(0,0);
       return;
     }
-    showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成');
+    showToast('✅ '+aiFallbackNote());
   }
   try{ await ensureWordBank(); }catch(e){ showToast('词库加载失败，请检查网络后重试'); return; }
   cloze=buildLocalClozeData(clozeLevel);
@@ -2744,7 +2763,7 @@ async function newDialog(autoStart){
     var d=null;
     try{ d=await aiBuildDialog(); }catch(e){}
     if(d){ aiLoadingDone(true); await aiLoadingWait(1300); aiLoadingHide(); showToast('✅ AI 生成成功'); }
-    else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1300); aiLoadingHide(); showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成'); }
+    else{ aiLoadingDone(false,'','✅ 已生成 · '+aiFallbackNote()); await aiLoadingWait(1300); aiLoadingHide(); showToast('✅ '+aiFallbackNote()); }
     if(d){
       aiHistPush('talk', d.name+'：'+d.lines[0].en);
       spk={dialog:{icon:'🤖',name:d.name,lines:d.lines}, cur:0, listening:false, paused:false,
@@ -2754,7 +2773,7 @@ async function newDialog(autoStart){
       if(autoStart) startLine(0);
       return;
     }
-    showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成');
+    showToast('✅ '+aiFallbackNote());
   }
   const last=localStorage.getItem('yt_dlast')||'';
   let pool=SCENES.filter(function(x){ return x.name!==last; });
@@ -3323,7 +3342,7 @@ async function generateAndShow(){
     var ai=null;
     try{ ai=await aiBuildReading(); }catch(e){}
     if(ai){ aiLoadingDone(true); await aiLoadingWait(1300); aiLoadingHide(); showToast('✅ AI 生成成功'); }
-    else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1300); aiLoadingHide(); showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成'); }
+    else{ aiLoadingDone(false,'','✅ 已生成 · '+aiFallbackNote()); await aiLoadingWait(1300); aiLoadingHide(); showToast('✅ '+aiFallbackNote()); }
     if(ai){
       var words=0; ai.paras.forEach(function(pa){ pa.forEach(function(s){ words+=s.en.split(/\s+/).length; }); });
       aiHistPush('read', ai.titleEn);
@@ -3334,7 +3353,7 @@ async function generateAndShow(){
       renderPassage(p); showReader(); setHash('#read');
       return;
     }
-    showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成');
+    showToast('✅ '+aiFallbackNote());
   }
   try{
     const p=buildPassage(curDiff);
@@ -3574,7 +3593,7 @@ async function lrGenerate(){
   var ai=null;
   try{ ai=await aiBuildLongRead(); }catch(e){}
   if(ai){ aiLoadingDone(true); await aiLoadingWait(1000); aiLoadingHide(); showToast('✅ AI 生成成功'); }
-  else{ aiLoadingDone(false,'已改用本地生成'); await aiLoadingWait(1000); aiLoadingHide(); showToast('❌ AI 生成失败'+(aiDiagSummary()?'（'+aiDiagSummary()+'）':'')+'，已改用本地生成'); }
+  else{ aiLoadingDone(false,'','✅ 已生成 · '+aiFallbackNote()); await aiLoadingWait(1000); aiLoadingHide(); showToast('✅ '+aiFallbackNote()); }
   if(ai){
     lrState={level:lrLevel, title:ai.titleEn, titleCn:ai.titleCn, paras:ai.paras, statements:ai.statements,
              answers:new Array(ai.statements.length).fill(null), submitted:false, src:'ai'};
