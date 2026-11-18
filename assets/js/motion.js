@@ -454,6 +454,29 @@
       }).observe(el, {childList:true});
     });
   }
+  /* ---------- 三墨版画：伏案读卷人剪影水印（home/书房，干净整体轮廓、大块面） ---------- */
+  function injectSilhouettes(){
+    const SIL = '<svg viewBox="0 0 240 150" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g fill="currentColor">'
+      + '<circle cx="92" cy="40" r="16"/>'
+      + '<path d="M92 54 C70 58 54 74 52 96 C51 106 53 114 56 122 L104 122 C110 112 110 92 104 76 C101 66 98 58 92 54 Z"/>'
+      + '<path d="M84 88 C100 92 116 96 130 100 L127 110 C112 106 96 102 82 98 Z"/>'
+      + '<path d="M118 106 C130 96 146 92 158 96 L156 110 C146 106 134 108 124 114 Z"/>'
+      + '<path d="M158 96 C170 92 182 94 190 100 L185 112 C177 107 167 106 156 110 Z"/>'
+      + '<rect x="40" y="122" width="168" height="8"/>'
+      + '<rect x="196" y="66" width="4" height="56"/>'
+      + '<path d="M180 66 L216 66 L208 46 L188 46 Z"/>'
+      + '<path d="M189 38 C191 32 199 32 201 38 C203 43 197 46 195 51 C193 46 187 43 189 38 Z"/>'
+      + '</g></svg>';
+    [['home', 'mSilHome'], ['profile', 'mSilProfile']].forEach(function(pair){
+      const sec = document.getElementById(pair[0]);
+      if(!sec || sec.querySelector('.mSil')) return;
+      const w = document.createElement('div');
+      w.className = 'mSil ' + pair[1];
+      w.innerHTML = SIL;
+      sec.appendChild(w);
+    });
+  }
+
   /* ---------- MV 渲染风格：全局胶片质感层（扫描线/暗角/颗粒闪烁/取景框角标） ---------- */
   function ensureFilm(){
     if(document.getElementById('mFilm')) return;
@@ -475,6 +498,7 @@
     armDetails();
     armShelfEQ();
     ensureFilm();
+    injectSilhouettes();
     onSwitch();                                            /* 首屏：案头专属入场 */
   }
   if(document.readyState === 'loading'){

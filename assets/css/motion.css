@@ -289,6 +289,76 @@ html[data-theme="dark"] #mFilm{
   text-shadow:0 0 16px rgba(201,143,45,.30), 0 0 2px rgba(201,143,45,.22);
 }
 
+/* =====================================================
+   三墨版画皮肤（v8 视觉强化）：world-execute-me 版画语法移植
+   大块面平涂 · 错开的阴影版（不用渐变）· 排线纹理 · 干净整体轮廓剪影
+   三墨 = 墨黑 --ink / 宣纸米白 --paper / 朱砂 --cinnabar（金只作专色点缀）
+   ===================================================== */
+
+/* ---------- 版画排线：全场景斜向刻线（每 7px 一道，极低透明度） ---------- */
+#stage > section::before{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:repeating-linear-gradient(45deg, rgba(43,36,24,.03) 0 1px, transparent 1px 7px);
+}
+html[data-theme="dark"] #stage > section::before{
+  background:repeating-linear-gradient(45deg, rgba(232,220,194,.026) 0 1px, transparent 1px 7px);
+}
+
+/* ---------- 错开的阴影版：场景题名下的平涂朱砂色版 ---------- */
+.sceneTitle::after,.meTitle::after{
+  content:"";display:block;height:5px;width:64px;margin-top:7px;
+  background:var(--cinnabar);
+  box-shadow:4px 4px 0 rgba(43,36,24,.16);
+}
+.deskGreet h1{position:relative;}
+.deskGreet h1::after{
+  content:"";position:absolute;left:2px;bottom:-10px;height:5px;width:74px;
+  background:var(--cinnabar);box-shadow:4px 4px 0 rgba(43,36,24,.16);
+}
+
+/* ---------- 版画装帧：主卡双框（套色 offset 已有，再加细内衬框） ---------- */
+.wCard,.meCard,.tkCard{outline:1px solid rgba(181,56,47,.26);outline-offset:5px;}
+
+/* ---------- 剪影水印节点（motion.js 注入伏案读卷人 SVG） ---------- */
+.mSil{position:absolute;pointer-events:none;color:var(--ink);opacity:.07;z-index:0;}
+.mSil svg{display:block;width:100%;height:auto;}
+.mSilHome{right:3%;bottom:5%;width:min(320px,40vw);}
+.mSilProfile{right:3%;top:400px;width:min(260px,34vw);opacity:.085;}
+html[data-theme="dark"] .mSil{color:#e8dcc2;opacity:.085;}
+
+/* ---------- 空状态：翻开的书剪影水印 ---------- */
+.empty{position:relative;overflow:hidden;}
+.empty::before{
+  content:"";position:absolute;right:10px;bottom:-4px;width:110px;height:74px;opacity:.09;
+  background:var(--ink);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 32'%3E%3Cpath d='M2 4 C10 0 20 2 23 6 L23 28 C20 24 10 22 2 26 Z M46 4 C38 0 28 2 25 6 L25 28 C28 24 38 22 46 26 Z'/%3E%3C/svg%3E") right bottom/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 32'%3E%3Cpath d='M2 4 C10 0 20 2 23 6 L23 28 C20 24 10 22 2 26 Z M46 4 C38 0 28 2 25 6 L25 28 C28 24 38 22 46 26 Z'/%3E%3C/svg%3E") right bottom/contain no-repeat;
+}
+
+/* ---------- 对坐会话版画化（跟读场景=聊天界面）：
+   气泡对话 + 剪影头像，奇偶行左右交替、双墨色区分角色 ---------- */
+#spDialog .dl{
+  position:relative;margin:9px 0;padding:12px 12px 12px 58px;
+  background:var(--paper-2);border:2px solid var(--ink);border-radius:12px 3px 12px 12px;
+  box-shadow:3px 3px 0 rgba(181,56,47,.2);border-bottom-style:solid;
+}
+#spDialog .dl:nth-child(even){
+  margin-left:11%;padding:12px 58px 12px 12px;
+  background:var(--paper);border-color:var(--cinnabar);
+  border-radius:3px 12px 12px 12px;box-shadow:-3px 3px 0 rgba(43,36,24,.14);
+}
+#spDialog .dl::before{
+  content:"";position:absolute;left:11px;top:16px;width:34px;height:34px;border-radius:50%;
+  background:var(--cinnabar);opacity:.85;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.6a4.6 4.6 0 0 1 4.6 4.6c0 1.7-.9 3.2-2.3 4 3.2.7 5.8 2.9 6.5 6.6l.4 3.6H2.8l.4-3.6c.7-3.7 3.3-5.9 6.5-6.6A4.6 4.6 0 0 1 7.4 7.2 4.6 4.6 0 0 1 12 2.6z'/%3E%3C/svg%3E") center/68% no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.6a4.6 4.6 0 0 1 4.6 4.6c0 1.7-.9 3.2-2.3 4 3.2.7 5.8 2.9 6.5 6.6l.4 3.6H2.8l.4-3.6c.7-3.7 3.3-5.9 6.5-6.6A4.6 4.6 0 0 1 7.4 7.2 4.6 4.6 0 0 1 12 2.6z'/%3E%3C/svg%3E") center/68% no-repeat;
+}
+#spDialog .dl:nth-child(even)::before{left:auto;right:11px;background:var(--ink);}
+#spDialog .dl .who{font-size:11px;letter-spacing:1px;}
+#spDialog .dl .dlpct{position:absolute;top:10px;right:12px;}
+#spDialog .dl:nth-child(even) .dlpct{right:auto;left:12px;}
+#spDialog .dl .dlcur{position:absolute;bottom:10px;right:12px;}
+
 /* ---------- 红线：尊重系统减弱动效 ---------- */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01s !important;animation-iteration-count:1 !important;transition-duration:.01s !important;}
