@@ -359,9 +359,76 @@ html[data-theme="dark"] .mSil{color:#e8dcc2;opacity:.085;}
 #spDialog .dl:nth-child(even) .dlpct{right:auto;left:12px;}
 #spDialog .dl .dlcur{position:absolute;bottom:10px;right:12px;}
 
+/* =====================================================
+   背景渲染层 #mArt（v8b）：world.execute(me) 式大幅版画动画
+   光芒爆发（缓旋）· 错版双墨大剪影（微摆）· glitch 切片（偶发跳变）·
+   像素噪带（闪烁）——全部 transform/opacity，内容层 z1 置于其上
+   ===================================================== */
+#mArt{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
+#stage{position:relative;z-index:1;}
+/* 光芒爆发：左上角平涂楔形光芒，缓慢旋转 */
+.mRays{
+  position:absolute;left:-26vmin;top:-26vmin;width:78vmin;height:78vmin;border-radius:50%;
+  background:repeating-conic-gradient(from 8deg at 50% 50%, var(--cinnabar) 0deg 7deg, transparent 7deg 21deg);
+  -webkit-mask-image:radial-gradient(circle at 50% 50%, rgba(0,0,0,.9) 0 34%, transparent 72%);
+  mask-image:radial-gradient(circle at 50% 50%, rgba(0,0,0,.9) 0 34%, transparent 72%);
+  opacity:.26;animation:mRaysSpin 90s linear infinite;
+}
+html[data-theme="dark"] .mRays{opacity:.17;}
+@keyframes mRaysSpin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+/* 错版双墨大剪影：朱砂色版在底下错位，墨版压上（套印没对准的手法） */
+.mFig{position:absolute;left:-5vw;bottom:-6px;width:min(64vw,92vmin);transform-origin:50% 100%;animation:mFigSway 12s ease-in-out infinite alternate;}
+.mFig span{position:absolute;left:0;bottom:0;width:100%;display:block;}
+.mFig svg{display:block;width:100%;height:auto;}
+.mFigPlate{color:var(--cinnabar);opacity:.21;transform:translate(1.4%,2%);}
+.mFigInk{color:var(--ink);opacity:.14;}
+html[data-theme="dark"] .mFigPlate{opacity:.24;}
+html[data-theme="dark"] .mFigInk{color:#e8dcc2;opacity:.09;}
+@keyframes mFigSway{from{transform:rotate(-.7deg);}to{transform:rotate(.7deg);}}
+/* glitch 切片：横向条带瞬间错位跳变（9s 周期里只闪 0.4s） */
+.mFigGl{opacity:0;}
+.mFigGl.g1{clip-path:inset(26% 0 58% 0);animation:mGl1 9s steps(1,end) infinite;}
+.mFigGl.g2{clip-path:inset(62% 0 22% 0);animation:mGl2 11s steps(1,end) infinite;}
+.mFigGl.g1{color:var(--cinnabar);opacity:0;}
+.mFigGl.g2{color:var(--cinnabar);opacity:0;}
+@keyframes mGl1{
+  0%,91.6%{opacity:0;transform:none;}
+  92%{opacity:.24;transform:translateX(2.2%);}
+  93.4%{opacity:.18;transform:translateX(-1.6%);clip-path:inset(20% 0 64% 0);}
+  95.6%{opacity:0;transform:none;}
+  100%{opacity:0;}
+}
+@keyframes mGl2{
+  0%,95.4%{opacity:0;transform:none;}
+  95.8%{opacity:.2;transform:translateX(-2.6%);}
+  97%{opacity:.14;transform:translateX(1.8%);clip-path:inset(56% 0 30% 0);}
+  98.4%{opacity:0;transform:none;}
+  100%{opacity:0;}
+}
+/* 像素噪带：横向小方块带，透明度闪烁 */
+.mPix{
+  position:absolute;left:0;right:0;height:22px;opacity:.06;color:var(--ink);
+  background:
+    repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 8px),
+    repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 11px);
+  background-position:0 0, 0 9px;
+  animation:mPixF 6s steps(1,end) infinite;
+}
+html[data-theme="dark"] .mPix{color:#e8dcc2;opacity:.05;}
+.mPix.p1{top:18%;}
+.mPix.p2{top:64%;animation-delay:2.6s;height:16px;}
+@keyframes mPixF{
+  0%,100%{opacity:.05;}
+  30%{opacity:.09;transform:translateX(6px);}
+  55%{opacity:.035;}
+  78%{opacity:.08;transform:translateX(-5px);}
+}
+
 /* ---------- 红线：尊重系统减弱动效 ---------- */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01s !important;animation-iteration-count:1 !important;transition-duration:.01s !important;}
   .mAmbient{display:none !important;}
   #mFilm::after{animation:none !important;}
+  #mArt *{animation:none !important;}
+  .mFigGl{opacity:0 !important;}
 }
