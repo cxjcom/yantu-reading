@@ -466,19 +466,25 @@
     + '<path d="M180 66 L216 66 L208 46 L188 46 Z"/>'
     + '<path d="M189 38 C191 32 199 32 201 38 C203 43 197 46 195 51 C193 46 187 43 189 38 Z"/>'
     + '</g></svg>';
+  const SIL_STAR = '<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M20 0 L24 16 L40 20 L24 24 L20 40 L16 24 L0 20 L16 16 Z"/></svg>';
 
-  /* 背景渲染层 #mArt：光芒爆发 + 错版双墨大剪影 + glitch 切片 + 像素噪带 */
+  /* 背景渲染层 #mArt：斜切专色场 + 光芒爆发 + 三层套印大剪影 + glitch 三切片 + 眼瞳十字星 + 像素噪带 */
   function ensureArt(){
     if(document.getElementById('mArt')) return;
     const a = document.createElement('div');
     a.id = 'mArt';
     a.innerHTML =
+      '<div class="mField"></div>' +
       '<div class="mRays"></div>' +
+      '<div class="mRaysFade"></div>' +
       '<div class="mFig">' +
         '<span class="mFigPlate">' + SIL_FIG + '</span>' +
+        '<span class="mFigPaper">' + SIL_FIG + '</span>' +
         '<span class="mFigInk">' + SIL_FIG + '</span>' +
         '<span class="mFigGl g1">' + SIL_FIG + '</span>' +
         '<span class="mFigGl g2">' + SIL_FIG + '</span>' +
+        '<span class="mFigGl g3">' + SIL_FIG + '</span>' +
+        '<span class="mStar">' + SIL_STAR + '</span>' +
       '</div>' +
       '<div class="mPix p1"></div>' +
       '<div class="mPix p2"></div>';
