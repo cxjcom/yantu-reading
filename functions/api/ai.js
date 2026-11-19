@@ -69,8 +69,8 @@ export async function onRequestPost(context) {
   return json({ error: { message: '上游端点均不可用' }, diag: diag }, 502);
 }
 
-/* 多模型竞速：preferModel（客户端缓存的真实模型）优先，池内其余模型并行，
-   任一通道产出 >2 字即胜出；共享空闲看门狗 40s / 硬顶 85s */
+/* 多模型顺序回退：WB 对同 key 并发流有限制（3 路并行全空实测），
+   改为逐个尝试——每个模型 40s 空闲窗，总硬顶 85s；取首个达标输出 */
 async function wbRace(msgs, temperature, preferModel, diag) {
   const pool = [];
   const add = function (m) {
@@ -82,41 +82,17 @@ async function wbRace(msgs, temperature, preferModel, diag) {
   if (!pool.length) pool.push('auto');
   diag.wb = 'pool[' + pool.join(',') + ']';
 
-  return new Promise(function (resolve) {
-    let settled = false, pending = pool.length;
-    const finish = function (text) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(hard);
-      resolve(text || '');
-    };
-    const hard = setTimeout(function () {
-      diag.wb += ' 硬顶85s';
-      finish('');
-    }, 85000);
-    let idle = setTimeout(function () {
-      diag.wb += ' 空闲40s';
-      finish('');
-    }, 40000);
-    const tick = function () {
-      clearTimeout(idle);
-      idle = setTimeout(function () {
-        diag.wb += ' 空闲40s';
-        finish('');
-      }, 40000);
-    };
-    pool.forEach(function (m) {
-      wbChat(m, msgs, temperature, tick).then(function (text) {
-        if (settled) return;
-        if (text && text.trim().length > 2) finish(text);
-        else {
-          pending--;
-          diag.wb += ' ' + m + ':空';
-          if (pending <= 0) finish('');
-        }
-      });
-    });
-  });
+  const t0 = Date.now();
+  for (let i = 0; i < pool.length; i++) {
+    if (Date.now() - t0 > 83000) { diag.wb += ' 总时限到'; break; }
+    const text = await wbChat(pool[i], msgs, temperature, function () {});
+    if (text && text.trim().length > 2) {
+      diag.wb += ' ' + pool[i] + ':' + text.length + '字';
+      return text;
+    }
+    diag.wb += ' ' + pool[i] + ':空';
+  }
+  return '';
 }
 
 /* 单通道 WB SSE 聚合：onChunk 为共享看门狗喂狗回调；半截输出也返回 */
