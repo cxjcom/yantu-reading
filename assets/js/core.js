@@ -1414,29 +1414,27 @@ async function wbCloudChat(msgs,timeoutMs,temp,modelId){
       :[{role:'system',content:'You are a helpful assistant. Be concise and helpful.'}].concat(msgs);
     const ctrl=new AbortController();
     AI_CTRLS.push(ctrl);
-    /* 空闲超时取代总超时：流式输出只要还在产 token 就不掐，
-       只有 40s 没有任何新内容才断；总时长仍受 timeoutMs 硬顶 */
+    /* 无空闲掐断（用户要求无时间限制）：流式只要还在产 token 就继续等，
+       仅保留 total 硬顶防挂死 */
     const total=timeoutMs||60000, t0=Date.now();
-    let idleTm=setTimeout(function(){ ctrl.abort(); }, 40000);
     for await (const chunk of WB_CLOUD.llm.chat.completions.create({
       model:modelId, messages:outMsgs, stream:true, temperature:(temp!=null?temp:0.75), signal:ctrl.signal
     })){
-      if(AI_CANCEL){ clearTimeout(idleTm); try{ctrl.abort();}catch(e){} return ''; }
-      clearTimeout(idleTm);
+      if(AI_CANCEL){ try{ctrl.abort();}catch(e){} return ''; }
       if(Date.now()-t0>total){ try{ctrl.abort();}catch(e){} break; }
-      idleTm=setTimeout(function(){ ctrl.abort(); }, 40000);
       const d=chunk.choices&&chunk.choices[0]&&chunk.choices[0].delta;
       if(d&&d.content) txt+=d.content;
     }
-    clearTimeout(idleTm);
   }catch(e){}
   return txt;   /* 超时/中断的半截输出也返回，交给 extractJSON 抢救 */
 }
 /* ---------- AI 链路诊断：失败不再静默，逐端点记录原因 ---------- */
 function aiDiagPush(steps){
   if(!steps||!steps.length) return;
+  let a=[];
+  try{ a=JSON.parse(localStorage.getItem('yt_aidiag')||'[]'); }catch(e){ a=[]; }
+  if(!Array.isArray(a)) a=[];                        /* 存储损坏（如非法 JSON）时自动重置，绝不静默丢诊断 */
   try{
-    const a=JSON.parse(localStorage.getItem('yt_aidiag')||'[]');
     a.push({t:Date.now(), steps:steps});
     if(a.length>6) a=a.slice(-6);
     localStorage.setItem('yt_aidiag', JSON.stringify(a));
@@ -1521,7 +1519,7 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
       const c = JSON.parse(localStorage.getItem('yt_wbmodels') || 'null');
       if (c && Array.isArray(c.ids) && c.ids.length && (Date.now() - c.t) < 86400000) relayModel = c.ids[0];
     } catch (e) {}
-    tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', relayModel, '', Math.min(total, 90000)), {
+    tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', relayModel, '', Math.min(total, 175000)), {
       win: function(){ epHealthSet('RELAY_OK', Date.now()); },
       lose: function(){ epHealthSet('RELAY_FAIL', Date.now()); }
     }));
@@ -1565,7 +1563,7 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
       lose:function(){ epHealthSet('WB_FAIL', Date.now()); }
     }));
   }else if(wbBlind && WB_CLOUD){
-    tasks.push(wrap('WB:auto', Date.now(), wbCloudChat(msgs,Math.min(total,45000),temp,'auto'), {
+    tasks.push(wrap('WB:auto', Date.now(), wbCloudChat(msgs,Math.min(total,90000),temp,'auto'), {
       win:function(){ epHealthSet('WB_OK', Date.now()); },
       lose:function(){ epHealthSet('WB_FAIL', Date.now()); }
     }));
@@ -1573,29 +1571,19 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     mark('WB','不可达/无模型',Date.now()-t0);
     epHealthSet('WB_FAIL', Date.now());
   }
-  /* ③ Pollinations 免费档：每 IP 45s 仅 1 次（超限 400/402）。
-     WB 健康（10 分钟内成功过）时不发射，免得白白烧配额还赢不了；
-     WB 缺席/刚失败才顶上，且尊重限流冷却 */
+  /* ③ Pollinations 免费档：每次都实际参赛（用户要求无限流/时间限制；
+     上游 45s/IP 与 402 是对方服务器的限制，撞上即快速失败换下一通道） */
   if(AI_FREE.length){
-    let gate='';
-    if(health.POLL_FAIL && (now-health.POLL_FAIL)<60000) gate='限流冷却 '+Math.ceil((60000-(now-health.POLL_FAIL))/1000)+'s';
-    else if(health.POLL_START && (now-health.POLL_START)<46000) gate='距上次请求<45s';
-    else if(wbId && WB_CLOUD && health.WB_OK && (now-health.WB_OK)<600000) gate='WB健康';
-    if(gate){
-      mark('POLL','跳过',0,gate);
-    }else{
-      const ep=AI_FREE[0];
-      const msStart=Date.now();
-      epHealthSet('POLL_START', msStart);
-      const p=fetchTask('POLL', ep.url, ep.model, ep.key||'', Math.min(total,100000))
-        .then(function(txt){ if(txt&&txt.trim().length>minL) epHealthSet('POLL_OK', Date.now()); return txt; })
-        .catch(function(e){
-          const m=String(e&&e.message||e);
-          if(/HTTP (400|402|403|429)/.test(m)) epHealthSet('POLL_FAIL', Date.now());
-          throw e;
-        });
-      tasks.push(wrap('POLL', msStart, p));
-    }
+    const ep=AI_FREE[0];
+    const msStart=Date.now();
+    const p=fetchTask('POLL', ep.url, ep.model, ep.key||'', total)
+      .then(function(txt){ if(txt&&txt.trim().length>minL) epHealthSet('POLL_OK', Date.now()); return txt; })
+      .catch(function(e){
+        const m=String(e&&e.message||e);
+        if(/HTTP (400|402|403|429)/.test(m)) epHealthSet('POLL_FAIL', Date.now());
+        throw e;
+      });
+    tasks.push(wrap('POLL', msStart, p));
   }
   /* ④ Ollama 本地：3s 内探测可达才加入竞速（不阻塞其他端点） */
   ollamaProbe().then(function(ok){
@@ -1606,34 +1594,7 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   raceStarted=true;
   const results=await Promise.all(tasks);
   if(AI_CANCEL) return null;
-  let win=results.find(function(r){ return r; });
-  /* POLL 因冷却被跳过且全部失败：等待冷却窗口结束补射一次（生成场景等待划算） */
-  if (!win && !AI_CANCEL) {
-    const skipped = diag.some(function(s){ return s.ep==='POLL' && s.st==='跳过'; });
-    if (skipped) {
-      const since = now - (health.POLL_START || 0);
-      const waitMs = Math.max(0, 46000 - since);
-      if (waitMs < 45000) {
-        await new Promise(function(r){ setTimeout(r, waitMs); });
-        if (!AI_CANCEL) {
-          const msStart = Date.now();
-          epHealthSet('POLL_START', msStart);
-          const p2 = fetchTask('POLL', AI_FREE[0].url, AI_FREE[0].model, '', Math.min(total, 100000))
-            .then(function(txt){
-              if (txt && txt.trim().length > minL) epHealthSet('POLL_OK', Date.now());
-              return txt;
-            })
-            .catch(function(e){
-              const m = String(e && e.message || e);
-              if (/HTTP (400|402|403|429)/.test(m)) epHealthSet('POLL_FAIL', Date.now());
-              throw e;
-            });
-          const r2 = await wrap('POLL', msStart, p2);
-          if (r2) win = r2;
-        }
-      }
-    }
-  }
+  const win=results.find(function(r){ return r; });
   if(win) return win;
   aiDiagPush(diag);
   return null;

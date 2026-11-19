@@ -1,9 +1,11 @@
 /* =====================================================
    研途阅读 · AI 同源中转（Cloudflare Pages Function）
    手机运营商常拦 workbuddy.host / pollinations.ai——同源请求不会被拦。
-   收 OpenAI 格式请求 → 服务端多模型竞速调 WB 云端（SSE 逐块聚合，
-   首个产出即胜出）→ 失败回落 Pollinations → 返回 OpenAI 格式 JSON。
-   防滥用：同 IP 15 次/分钟（isolate 内存，尽力而为）+ 消息条数/长度封顶。
+   收 OpenAI 格式请求 → 服务端多模型顺序回退调 WB 云端（SSE 聚合，
+   长度达标判断：<6500 字自动换模型）→ 失败回落 Pollinations →
+   返回 OpenAI 格式 JSON。
+   无限流、无短时限（用户要求）：仅保留消息封顶与服务端 175s 总程，
+   等满 175s 比提前失败更符合生成场景。
    ===================================================== */
 const WB_CHAT = 'https://kaoyan-reading-65228.app.workbuddy.host/.cloud/llm/chat/completions';
 const WB_KEY = 'wbpk_xBdw1VVfFNuWiVJgnZPy_EY32VZ53l9ecPE5JwddrM6FHqeySawSU';
@@ -18,15 +20,6 @@ function json(obj, status) {
 
 export async function onRequestPost(context) {
   const request = context.request;
-  const ip = request.headers.get('CF-Connecting-IP') || 'anon';
-  /* 限流：15 次/分钟/IP */
-  const now = Date.now();
-  if (!globalThis.__ytRL) globalThis.__ytRL = new Map();
-  const arr = (globalThis.__ytRL.get(ip) || []).filter(function (t) { return now - t < 60000; });
-  if (arr.length >= 15) return json({ error: { message: '速率限制：每分钟 15 次，稍后再试' } }, 429);
-  arr.push(now);
-  globalThis.__ytRL.set(ip, arr);
-
   let body;
   try { body = await request.json(); } catch (e) { return json({ error: { message: 'bad json' } }, 400); }
   if (!body || !Array.isArray(body.messages) || !body.messages.length) {
@@ -36,7 +29,7 @@ export async function onRequestPost(context) {
     return { role: String(m.role || 'user').slice(0, 16), content: String(m.content || '').slice(0, 24000) };
   });
 
-  /* ① WB 云端多模型竞速（SSE 聚合，共享空闲 40s / 硬顶 85s） */
+  /* ① WB 云端多模型顺序回退（SSE 聚合，长度达标判断） */
   let diag = {};
   try {
     const text = await wbRace(msgs, body.temperature, body.model, diag);
@@ -69,9 +62,9 @@ export async function onRequestPost(context) {
   return json({ error: { message: '上游端点均不可用' }, diag: diag }, 502);
 }
 
-/* 多模型顺序回退 + 长度达标判断：WB 对同 key 并发流有限制（3 路并行全空实测），
+/* 多模型顺序回退 + 长度达标判断：WB 对同 key 并发流有限制（3 路并行实测全空），
    且 auto 等模型存在 ~5000 字符输出截断——输出不足 6500 字时自动换下一个模型，
-   池耗尽/硬顶 110s 时返回历史最长输出（客户端校验兜底） */
+   池耗尽/总程 175s 时返回历史最长输出（客户端校验兜底） */
 async function wbRace(msgs, temperature, preferModel, diag) {
   const pool = [];
   const add = function (m) {
@@ -87,8 +80,8 @@ async function wbRace(msgs, temperature, preferModel, diag) {
   const t0 = Date.now();
   let best = '', bestLen = 0;
   for (let i = 0; i < pool.length; i++) {
-    if (Date.now() - t0 > 105000) { diag.wb += ' 总时限到'; break; }
-    const text = await wbChat(pool[i], msgs, temperature, function () {});
+    if (Date.now() - t0 > 170000) { diag.wb += ' 总程175s到'; break; }
+    const text = await wbChat(pool[i], msgs, temperature);
     const L = (text || '').trim().length;
     if (L > bestLen) { bestLen = L; best = text || ''; }
     diag.wb += ' ' + pool[i] + ':' + L + '字';
@@ -98,12 +91,12 @@ async function wbRace(msgs, temperature, preferModel, diag) {
   return best;
 }
 
-/* 单通道 WB SSE 聚合：onChunk 为共享看门狗喂狗回调；半截输出也返回 */
-async function wbChat(model, msgs, temperature, onChunk) {
+/* 单通道 WB SSE 聚合：无空闲掐断（流式只要还在产 token 就继续等），
+   仅保留单模型 90s 上限避免单模型吃光总程 */
+async function wbChat(model, msgs, temperature) {
   const ctrl = new AbortController();
   const t0 = Date.now();
-  const hard = setTimeout(function () { ctrl.abort(); }, 85000);
-  let idle = setTimeout(function () { ctrl.abort(); }, 40000);
+  const hard = setTimeout(function () { ctrl.abort(); }, 90000);
   try {
     const r = await fetch(WB_CHAT, {
       method: 'POST',
@@ -120,7 +113,7 @@ async function wbChat(model, msgs, temperature, onChunk) {
       }),
       signal: ctrl.signal
     });
-    if (!r.ok || !r.body) { clearTimeout(hard); clearTimeout(idle); return ''; }
+    if (!r.ok || !r.body) { clearTimeout(hard); return ''; }
     const reader = r.body.getReader();
     const dec = new TextDecoder();
     let buf = '', out = '';
@@ -128,17 +121,14 @@ async function wbChat(model, msgs, temperature, onChunk) {
       const chunk = await reader.read();
       if (chunk.done) break;
       buf += dec.decode(chunk.value, { stream: true });
-      clearTimeout(idle);
-      idle = setTimeout(function () { ctrl.abort(); }, 40000);
-      if (onChunk) onChunk();
-      if (Date.now() - t0 > 85000) break;
+      if (Date.now() - t0 > 90000) break;
       let idx;
       while ((idx = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, idx).trim();
         buf = buf.slice(idx + 1);
         if (line.indexOf('data:') !== 0) continue;
         const payload = line.slice(5).trim();
-        if (payload === '[DONE]') { clearTimeout(hard); clearTimeout(idle); return out; }
+        if (payload === '[DONE]') { clearTimeout(hard); return out; }
         try {
           const j = JSON.parse(payload);
           const d = j.choices && j.choices[0] && j.choices[0].delta;
@@ -146,10 +136,10 @@ async function wbChat(model, msgs, temperature, onChunk) {
         } catch (e) { /* 忽略无法解析的行 */ }
       }
     }
-    clearTimeout(hard); clearTimeout(idle);
+    clearTimeout(hard);
     return out;
   } catch (e) {
-    clearTimeout(hard); clearTimeout(idle);
+    clearTimeout(hard);
     return '';
   }
 }
