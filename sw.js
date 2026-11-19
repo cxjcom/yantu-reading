@@ -5,15 +5,15 @@
    - 带 ?v=N 的静态资源：缓存优先（版本化 URL 视为不可变；HTML 更新后自然引用新版本 URL）
    - 其他带 ? 的请求直连网络；跨域（有道发音等）一律不缓存
    - 无版本的同源静态资源：cache-first + 运行时缓存，上限 80 条（越旧越先淘汰） */
-const CACHE = 'yt-pwa-v93';
+const CACHE = 'yt-pwa-v95';
 const PRECACHE = [
   './',
   './index.html',
-  './assets/css/app.css?v=67',
-  './assets/js/core.js?v=67',
-  './assets/js/book.js?v=65',
-  './assets/css/motion.css?v=14',
-  './assets/js/motion.js?v=14',
+  './assets/css/app.css?v=69',
+  './assets/js/core.js?v=69',
+  './assets/js/book.js?v=67',
+  './assets/css/motion.css?v=16',
+  './assets/js/motion.js?v=16',
   /* wordbank.js（4.3MB）不预缓存：首次在线加载后进入运行时缓存，离线可用 */
   './icon-192.png',
   './icon-512.png',

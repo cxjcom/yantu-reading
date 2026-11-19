@@ -1188,6 +1188,18 @@ $('#epTestBtn').onclick=async function(){
     lines.push('❌ WorkBuddy 云端：不可达（'+String(e&&e.message||e).slice(0,40)+'）');
     lines.push('　└ 常见原因：<b>广告拦截/隐私插件拦了 workbuddy.host</b>，或该域名被安全软件拦截——把域名加入白名单或临时关掉插件再试');
   }
+  /* ①b 同源中转（Cloudflare 边缘代调，手机端首选通道） */
+  try{
+    const tR=Date.now();
+    const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'shell',messages:[{role:'user',content:'回复一个字：通'}]})});
+    const j=await r.json().catch(()=>null);
+    const okr=r.ok && j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+    lines.push((okr?'✅':'⚠️')+' 同源中转：'+(okr?'可达，边缘代调成功（'+(Date.now()-tR)+'ms）':'HTTP '+r.status+'（'+(Date.now()-tR)+'ms）'));
+  }catch(e){
+    lines.push('❌ 同源中转：不可达（'+String(e&&e.message||e).slice(0,40)+'）');
+    lines.push('　└ 仅线上 pages.dev 可用；本地开发无此通道属正常');
+  }
   /* ② Pollinations 兜底 */
   try{
     const t1=Date.now();
@@ -1498,6 +1510,20 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   let raceStarted=false;
   const health=epHealth();
   const now=Date.now();
+  /* ⓪ 同源中转：手机运营商常拦外部 AI 域名——Cloudflare 边缘同源代调
+     （functions/api/ai.js），同源永不被拦；仅线上 https 启用，本地 404 无意义。
+     模型 id 优先透传缓存里的 WB 模型（与直连 WB 同质量） */
+  if (typeof location !== 'undefined' && location.protocol === 'https:' && location.hostname.indexOf('pages.dev') >= 0) {
+    let relayModel = 'auto';
+    try {
+      const c = JSON.parse(localStorage.getItem('yt_wbmodels') || 'null');
+      if (c && Array.isArray(c.ids) && c.ids.length && (Date.now() - c.t) < 86400000) relayModel = c.ids[0];
+    } catch (e) {}
+    tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', relayModel, '', Math.min(total, 90000)), {
+      win: function(){ epHealthSet('RELAY_OK', Date.now()); },
+      lose: function(){ epHealthSet('RELAY_FAIL', Date.now()); }
+    }));
+  }
   /* ① 自定义端点：用户付费配置，永远参赛 */
   if(cfg.url) tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000))));
   /* ② WB 云端：模型 id 优先用 localStorage 缓存（24h）——列表请求失败/超时不再把 WB 判死；
