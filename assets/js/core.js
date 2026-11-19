@@ -3454,7 +3454,17 @@ try{
 
 /* PWA 离线缓存（HTTPS/本地环境下注册；手机局域网 HTTP 环境自动跳过） */
 if('serviceWorker' in navigator && (location.protocol==='https:' || ['localhost','127.0.0.1'].indexOf(location.hostname)>=0)){
+  const __hadCtl = !!navigator.serviceWorker.controller;   /* 页面加载时是否已有旧 SW 在控制 */
   navigator.serviceWorker.register('./sw.js').catch(function(){});
+  /* 新 SW 接管（skipWaiting+claim）→ 自动刷新一次，手机恢复旧页面也能立刻拿到新版 */
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if(!__hadCtl) return;                                  /* 首次安装接管不刷新（防循环） */
+    if(sessionStorage.getItem('__swReloaded')) return;     /* 本次会话只刷一次 */
+    sessionStorage.setItem('__swReloaded','1');
+    location.reload();
+  });
+  /* 长驻页面每 30 分钟检查一次 SW 更新 */
+  setInterval(function(){ navigator.serviceWorker.getRegistration().then(function(r){ if(r) r.update().catch(function(){}); }); }, 30*60*1000);
 }
 
 /* ---------- 安装到手机桌面（引导面板 + 我的手动入口共用） ---------- */
