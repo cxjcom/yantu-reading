@@ -76,6 +76,7 @@ async function wbRace(msgs, temperature, preferModel, diag) {
   const add = function (m) {
     if (m && typeof m === 'string' && m !== 'shell' && pool.indexOf(m) < 0) pool.push(m);
   };
+  add('auto');                                          /* auto 历史输出最长（6400-7000 字），置顶 */
   if (preferModel && preferModel !== 'auto') add(preferModel);
   WB_POOL.forEach(add);
   if (!pool.length) pool.push('auto');
