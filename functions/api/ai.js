@@ -69,8 +69,9 @@ export async function onRequestPost(context) {
   return json({ error: { message: '上游端点均不可用' }, diag: diag }, 502);
 }
 
-/* 多模型顺序回退：WB 对同 key 并发流有限制（3 路并行全空实测），
-   改为逐个尝试——每个模型 40s 空闲窗，总硬顶 85s；取首个达标输出 */
+/* 多模型顺序回退 + 长度达标判断：WB 对同 key 并发流有限制（3 路并行全空实测），
+   且 auto 等模型存在 ~5000 字符输出截断——输出不足 6500 字时自动换下一个模型，
+   池耗尽/硬顶 110s 时返回历史最长输出（客户端校验兜底） */
 async function wbRace(msgs, temperature, preferModel, diag) {
   const pool = [];
   const add = function (m) {
@@ -82,17 +83,19 @@ async function wbRace(msgs, temperature, preferModel, diag) {
   if (!pool.length) pool.push('auto');
   diag.wb = 'pool[' + pool.join(',') + ']';
 
+  const GOOD = 6500;
   const t0 = Date.now();
+  let best = '', bestLen = 0;
   for (let i = 0; i < pool.length; i++) {
-    if (Date.now() - t0 > 83000) { diag.wb += ' 总时限到'; break; }
+    if (Date.now() - t0 > 105000) { diag.wb += ' 总时限到'; break; }
     const text = await wbChat(pool[i], msgs, temperature, function () {});
-    if (text && text.trim().length > 2) {
-      diag.wb += ' ' + pool[i] + ':' + text.length + '字';
-      return text;
-    }
-    diag.wb += ' ' + pool[i] + ':空';
+    const L = (text || '').trim().length;
+    if (L > bestLen) { bestLen = L; best = text || ''; }
+    diag.wb += ' ' + pool[i] + ':' + L + '字';
+    if (L >= GOOD) break;
   }
-  return '';
+  if (bestLen > 0) diag.wb += ' 返回' + bestLen + '字';
+  return best;
 }
 
 /* 单通道 WB SSE 聚合：onChunk 为共享看门狗喂狗回调；半截输出也返回 */
