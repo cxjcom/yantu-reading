@@ -1445,7 +1445,9 @@ function aiDiagPush(steps){
 function aiDiagSummary(){
   try{
     const a=JSON.parse(localStorage.getItem('yt_aidiag')||'[]');
-    const last=a[a.length-1]; if(!last) return '';
+    /* 只认 24 小时内的诊断——旧会话残留条目会污染当前 toast（"兜底1"悬案根源） */
+    const fresh=a.filter(function(x){ return x && (Date.now()-(x.t||0)) < 86400000; });
+    const last=fresh[fresh.length-1]; if(!last) return '';
     return last.steps.map(function(s){ return s.ep+':'+s.st+(s.x?('('+s.x+')'):''); }).join(' · ').slice(0,60);
   }catch(e){ return ''; }
 }
