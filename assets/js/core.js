@@ -1606,7 +1606,34 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   raceStarted=true;
   const results=await Promise.all(tasks);
   if(AI_CANCEL) return null;
-  const win=results.find(function(r){ return r; });
+  let win=results.find(function(r){ return r; });
+  /* POLL 因冷却被跳过且全部失败：等待冷却窗口结束补射一次（生成场景等待划算） */
+  if (!win && !AI_CANCEL) {
+    const skipped = diag.some(function(s){ return s.ep==='POLL' && s.st==='跳过'; });
+    if (skipped) {
+      const since = now - (health.POLL_START || 0);
+      const waitMs = Math.max(0, 46000 - since);
+      if (waitMs < 45000) {
+        await new Promise(function(r){ setTimeout(r, waitMs); });
+        if (!AI_CANCEL) {
+          const msStart = Date.now();
+          epHealthSet('POLL_START', msStart);
+          const p2 = fetchTask('POLL', AI_FREE[0].url, AI_FREE[0].model, '', Math.min(total, 100000))
+            .then(function(txt){
+              if (txt && txt.trim().length > minL) epHealthSet('POLL_OK', Date.now());
+              return txt;
+            })
+            .catch(function(e){
+              const m = String(e && e.message || e);
+              if (/HTTP (400|402|403|429)/.test(m)) epHealthSet('POLL_FAIL', Date.now());
+              throw e;
+            });
+          const r2 = await wrap('POLL', msStart, p2);
+          if (r2) win = r2;
+        }
+      }
+    }
+  }
   if(win) return win;
   aiDiagPush(diag);
   return null;
