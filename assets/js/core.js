@@ -1440,6 +1440,25 @@ function aiDiagPush(steps){
     localStorage.setItem('yt_aidiag', JSON.stringify(a));
   }catch(e){}
 }
+/* 截断续写助手：免费模型（WB auto/Pollinations）存在 ~5000 字符输出上限，
+   540+ 词标准一次写不完——让模型从中断处续写一次，合并重新解析；
+   返回 {j, paras}（续写后段落更多且标题有效）或 null（续写失败则维持原判定） */
+async function aiContinueTruncated(sys, txt, paras){
+  const moreTxt=await aiChat(sys,
+    '你上一条回复的 JSON 在中途被截断了。以下是已输出内容的最后 240 字符：'+txt.slice(-240)+
+    '\n请从中断处直接继续输出剩余内容直到 JSON 完整闭合：禁止重复已输出内容、禁止输出任何解释或 markdown 代码块标记。',
+    150000, 30, {temp:0.55});
+  if(!moreTxt) return null;
+  const j2=extractJSON(txt+'\n'+moreTxt)||extractJSON(moreTxt);
+  if(!j2 || !j2.title || !j2.paras) return null;
+  const paras2=(j2.paras||[]).map(function(p){
+    return (p.sents||[]).filter(function(s){ return s&&s.en; }).map(function(s){
+      return {en:String(s.en).trim(), cn:String(s.cn||'').trim(), g:''};
+    });
+  }).filter(function(a){ return a.length>=3 && a.every(function(s){ return s.en.length>=25 && s.cn; }); });
+  if(paras2.length < paras.length) return null;
+  return {j:j2, paras:paras2};
+}
 function aiDiagSummary(){
   try{
     const a=JSON.parse(localStorage.getItem('yt_aidiag')||'[]');
@@ -1688,16 +1707,26 @@ async function aiBuildReading(){
     const usr=base+(attempt===1?' 再次强调：必须至少'+MINP+'个自然段、全文'+MINW+'词以上，不许偷工减料，篇幅宁可偏长也不要只写几段。':'')+tail;
     const txt=await aiChat(sys,usr,180000,80,{temp:0.55});
     if(!txt) continue;
-    const j=extractJSON(txt); if(!j) continue;
-    const paras=(j.paras||[]).map(function(p){
+    const j0=extractJSON(txt); if(!j0) continue;
+    let j=j0;
+    let paras=(j.paras||[]).map(function(p){
       return (p.sents||[]).filter(function(s){ return s&&s.en; }).map(function(s){
         return {en:String(s.en).trim(), cn:String(s.cn||'').trim(), g:''};
       });
     }).filter(function(a){ return a.length>=3 && a.every(function(s){ return s.en.length>=25 && s.cn; }); });
+    const canCont=txt.length>3000 && txt.length<9000;
+    if(canCont && (!j.title || paras.length<MINP)){
+      const c=await aiContinueTruncated(sys, txt, paras);
+      if(c){ j=c.j; paras=c.paras; }
+    }
     if(!j.title || paras.length<MINP) continue;
     var wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); });
     /* 字数容差：差 40 词以内（或 88%）也算合格——真 AI 略短也远好于回落本地，避免白耗两次整生成 */
     const WC_MIN=Math.max(MINW-40, Math.round(MINW*0.88));
+    if(wc<WC_MIN && canCont){
+      const c=await aiContinueTruncated(sys, txt, paras);
+      if(c){ j=c.j; paras=c.paras; wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
+    }
     if(wc<WC_MIN) continue;   /* 段数或字数不达标：重试一次，仍不足则返回 null 走本地引擎 */
     const words=(j.words||[]).filter(function(w){ return w&&w.w; }).slice(0,14)
       .map(function(w){ return {w:String(w.w), cn:String(w.cn||'')}; });
