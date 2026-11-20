@@ -20,6 +20,7 @@ function json(obj, status) {
 
 export async function onRequestPost(context) {
   const request = context.request;
+  const aiBinding = (context.env && context.env.AI) ? context.env.AI : null;
   let body;
   try { body = await request.json(); } catch (e) { return json({ error: { message: 'bad json' } }, 400); }
   if (!body || !Array.isArray(body.messages) || !body.messages.length) {
@@ -39,7 +40,23 @@ export async function onRequestPost(context) {
     diag.wb = '竞速全空 (' + diag.wb + ')';
   } catch (e) { diag.wb = 'ERR:' + String(e && e.message || e).slice(0, 60); }
 
-  /* ② Pollinations 服务端回落 */
+  /* ② Cloudflare Workers AI（后台加 AI 绑定后自动启用；免 key，稳定） */
+  if (aiBinding) {
+    try {
+      const r = await aiBinding.run('@cf/qwen/qwen1.5-14b-chat-awq', {
+        messages: msgs,
+        temperature: body.temperature != null ? body.temperature : 0.6
+      });
+      const t = r && (r.response || (r.choices && r.choices[0] && r.choices[0].message ? r.choices[0].message.content : null));
+      const L = (t || '').trim().length;
+      diag.wa = L + '字';
+      if (t && L > 2) {
+        return json({ choices: [{ message: { role: 'assistant', content: String(t) } }] });
+      }
+    } catch (e) { diag.wa = 'ERR:' + String(e && e.message || e).slice(0, 60); }
+  }
+
+  /* ③ Pollinations 服务端回落 */
   try {
     const r = await fetch('https://text.pollinations.ai/openai', {
       method: 'POST',
