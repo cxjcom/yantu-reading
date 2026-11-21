@@ -1192,6 +1192,14 @@ $('#epTestBtn').onclick=async function(){
   const box=document.getElementById('epTestOut');
   box.style.display='block'; box.innerHTML='检测中…';
   const lines=[];
+  /* ⓪ 页面版本指示：一眼核对浏览器实际跑到的资源/SW 版本（SW 缓存滞后排查利器） */
+  try{
+    const coreHit=(performance.getEntriesByType('resource').map(function(r){return r.name;}).filter(function(n){return n.indexOf('core.js')>=0;})[0])||'';
+    const vMatch=coreHit.match(/core\.js\?v=(\d+)/);
+    let swCache='';
+    try{ if(window.caches&&navigator.serviceWorker&&navigator.serviceWorker.controller){ const ks=await caches.keys(); swCache=ks[0]||''; } }catch(e){}
+    lines.push('📄 页面版本：core v'+(vMatch?vMatch[1]:'?')+(swCache?(' · SW '+swCache):' · SW 未接管（首访正常，普通刷新一次即接管）'));
+  }catch(e){}
   /* ① WorkBuddy 云端 */
   try{
     if(window.WorkBuddyCloud && WB_CLOUD){
@@ -1209,14 +1217,15 @@ $('#epTestBtn').onclick=async function(){
     lines.push('❌ WorkBuddy 云端：不可达（'+String(e&&e.message||e).slice(0,40)+'）');
     lines.push('　└ 常见原因：<b>广告拦截/隐私插件拦了 workbuddy.host</b>，或该域名被安全软件拦截——把域名加入白名单或临时关掉插件再试');
   }
-  /* ①b 同源中转（Cloudflare 边缘代调，手机端首选通道） */
+  /* ①b 同源中转（Cloudflare 边缘代调，手机端首选通道；携智谱 Key 才等于用户真实生成路径） */
   try{
     const tR=Date.now();
+    const zk=(function(){ try{ return aiCfg().zhipuKey||''; }catch(e){ return ''; } })();
     const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'shell',messages:[{role:'user',content:'回复一个字：通'}]})});
+      body:JSON.stringify({model:'shell',messages:[{role:'user',content:'回复一个字：通'}],zhipuKey:zk})});
     const j=await r.json().catch(()=>null);
     const okr=r.ok && j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-    lines.push((okr?'✅':'⚠️')+' 同源中转：'+(okr?'可达，边缘代调成功（'+(Date.now()-tR)+'ms）':'HTTP '+r.status+'（'+(Date.now()-tR)+'ms）'));
+    lines.push((okr?'✅':'⚠️')+' 同源中转：'+(okr?'可达，边缘代调成功'+(zk?'（携智谱 Key 服务端直调）':'（未配多通道智谱 Key）')+'（'+(Date.now()-tR)+'ms）':'HTTP '+r.status+'（'+(Date.now()-tR)+'ms）'));
   }catch(e){
     lines.push('❌ 同源中转：不可达（'+String(e&&e.message||e).slice(0,40)+'）');
     lines.push('　└ 仅线上 pages.dev 可用；本地开发无此通道属正常');
