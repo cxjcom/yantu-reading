@@ -1527,7 +1527,7 @@ async function aiGenTail(sys, paras, needWords, lvl){
     '\n\n请继续写这篇文章的后半部分：再写 '+moreN+' 个自然段（每段 4-6 句，英文每句 15-30 词并配准确中文翻译），'+
     '衔接前文主题与论证，不要重复已有内容。'+(lvl||'')+
     '\n输出严格 JSON 对象：{"paras":[{"sents":[{"en":"英文句","cn":"中文句"}]}]}，禁止解释、禁止 markdown 标记。';
-  const txt=await aiChat(sys,usr,110000,800,{temp:0.55,noPOLL:true});
+  const txt=await aiChat(sys,usr,110000,1500,{temp:0.55,noPOLL:true});
   if(!txt) return null;
   const j=extractJSON(txt);
   if(!j || !j.paras) return null;
@@ -1823,7 +1823,7 @@ async function aiBuildReading(){
   const LVL_SHORT=({cet4:'四级',cet6:'六级',std:'考研',plus:'考研'}[diffNow]||'考研');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+' 再次强调：必须至少'+MINP+'个自然段、全文'+(MINW+40)+'词以上，不许偷工减料，篇幅宁可偏长也不要只写几段。'+tail;
-    const txt=await aiChat(sys,usr,180000,80,{temp:0.55,noPOLL:true});
+    const txt=await aiChat(sys,usr,180000,2000,{temp:0.55,noPOLL:true});
     if(!txt) continue;
     const j0=extractJSON(txt); if(!j0) continue;
     let j=j0;
@@ -1896,7 +1896,7 @@ async function aiBuildReadingQs(enText, lvl){
     '\n\n请基于这篇文章命制5道阅读理解选择题（题型覆盖 1道主旨大意题 + 2道细节理解题 + 1道推理判断题 + 1道词义猜测题）：题干和四个选项全部用英文，选项有干扰性但只有一个正确答案，答案必须能从文章中找到依据；每题给中文解析（说明定位依据与排除理由）。'+
     '\n输出严格 JSON 对象：{"qs":[{"kind":"题型（主旨大意/细节理解/推理判断/词义猜测/作者态度）","stem":"英文题干","opts":["四个英文选项"],"ans":0到3的正确选项下标,"why":"中文解析"} 共5题]}，禁止解释、markdown 标记。';
   try{
-    const txt=await aiChat(sys,usr,90000,400,{temp:0.4,noPOLL:true});
+    const txt=await aiChat(sys,usr,90000,1200,{temp:0.4,noPOLL:true});
     const j=txt?extractJSON(txt):null;
     if(!j) return null;
     /* AI 命题的阅读理解题：校验结构（题干 + 4 选项 + 合法答案下标），不足 4 题则不附带 */
@@ -1928,7 +1928,7 @@ async function aiBuildCloze(){
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+(attempt===1?' 再次强调：短文必须达到'+MINW+'词以上，不许只写一段或几句话。':'')+tail;
-    const txt=await aiChat(sys,usr,180000,80,{temp:0.55,noPOLL:true});
+    const txt=await aiChat(sys,usr,180000,2000,{temp:0.55,noPOLL:true});
     if(!txt) continue;
     const j=extractJSON(txt); if(!j) continue;
     const opts=(j.options||[]).filter(function(o){ return o&&o.w&&o.cn; }).slice(0,15)
@@ -3906,7 +3906,7 @@ async function aiBuildLongRead(){
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+(attempt===1?' 再次强调：段落必须 12 个以上、总词数达标、恰好 10 道题且出处段落互不相同。':'')+tail;
-    const txt=await aiChat(sys,usr,180000,80,{temp:0.55,noPOLL:true});
+    const txt=await aiChat(sys,usr,180000,2000,{temp:0.55,noPOLL:true});
     if(!txt) continue;
     const j=extractJSON(txt); if(!j) continue;
     const paras=(j.paras||[]).filter(function(p){ return p&&p.en&&p.en.length>=100; })
