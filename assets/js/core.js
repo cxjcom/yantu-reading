@@ -4100,8 +4100,14 @@ function audioCtx(){
   var sp=document.getElementById('splash');
   if(!sp) return;
   if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches){ sp.remove(); return; }
+  /* 锁滚改类开关式（v1.10.26）：body:has(#splash) 依赖节点移除才解锁——
+     手机端若节点移除失败（省电模式停动画等），整个会话 body 锁死不能滑。
+     类开关保证 end() 必解锁；补 3s 心跳兜底 */
+  var bl=function(on){ try{ document.body.classList[on?'add':'remove']('splash-lock'); }catch(e){} };
+  bl(true);
   var done=false;
-  function end(){ if(done) return; done=true; if(sp.parentNode) sp.parentNode.removeChild(sp); }
+  function end(){ if(done) return; done=true; bl(false); if(sp.parentNode) sp.parentNode.removeChild(sp); }
+  var heartbeat=setInterval(function(){ if(done||!sp.parentNode){ clearInterval(heartbeat); end(); } }, 3000);
   function skip(){ if(done) return; done=true; sp.classList.add('spSkip'); setTimeout(end, 420); }
   sp.addEventListener('animationend', function(ev){ if(ev.animationName==='spExit') end(); });
   sp.addEventListener('click', skip);

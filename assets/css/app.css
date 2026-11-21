@@ -769,7 +769,7 @@ body.flip-on .para{margin-bottom:26px;}
   animation:spExit .75s cubic-bezier(.5,.05,.75,.4) 6.45s forwards,
             spFree 0s linear 6.45s forwards;
 }
-body:has(#splash){overflow:hidden;}
+body.splash-lock{overflow:hidden;}
 @keyframes spExit{
   0%{opacity:1; filter:blur(0); transform:scale(1);}
   100%{opacity:0; visibility:hidden; filter:blur(12px); transform:scale(1.06);}
