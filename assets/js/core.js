@@ -1496,7 +1496,7 @@ async function aiContinueTruncated(sys, txt, paras){
   const moreTxt=await aiChat(sys,
     '你上一条回复的 JSON 在中途被截断了。以下是已输出内容的最后 240 字符：'+txt.slice(-240)+
     '\n请从中断处直接继续输出剩余内容直到 JSON 完整闭合：禁止重复已输出内容、禁止输出任何解释或 markdown 代码块标记。',
-    150000, 200, {temp:0.55});
+    150000, 200, {temp:0.55,noPOLL:true});
   if(!moreTxt) return null;
   const j2=extractJSON(txt+'\n'+moreTxt)||extractJSON(moreTxt);
   if(!j2 || !j2.title || !j2.paras) return null;
@@ -1520,7 +1520,7 @@ async function aiGenTail(sys, paras, needWords, lvl){
     '\n\n请继续写这篇文章的后半部分：再写 '+moreN+' 个自然段（每段 4-6 句，英文每句 15-30 词并配准确中文翻译），'+
     '衔接前文主题与论证，不要重复已有内容。'+(lvl||'')+
     '\n输出严格 JSON 对象：{"paras":[{"sents":[{"en":"英文句","cn":"中文句"}]}]}，禁止解释、禁止 markdown 标记。';
-  const txt=await aiChat(sys,usr,170000,800,{temp:0.55});
+  const txt=await aiChat(sys,usr,170000,800,{temp:0.55,noPOLL:true});
   if(!txt) return null;
   const j=extractJSON(txt);
   if(!j || !j.paras) return null;
@@ -1670,9 +1670,10 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     mark('WB','不可达/无模型',Date.now()-t0);
     epHealthSet('WB_FAIL', Date.now());
   }
-  /* ③ Pollinations 免费档：每次都实际参赛（用户要求无限流/时间限制；
-     上游 45s/IP 与 402 是对方服务器的限制，撞上即快速失败换下一通道） */
-  if(AI_FREE.length){
+  /* ③ Pollinations 免费档：默认参赛（上游 45s/IP 与 402 是对方服务器的限制，撞上即快速失败换下一通道）。
+     opts.noPOLL 时禁赛——大请求（文章/补齐/续写）它最快但 ~5000 字符必截断且句式残次，
+     赢下竞速反而毒化全部救援链，中转/智谱永远抢不到上场机会（2026-11-21 实测修复） */
+  if(AI_FREE.length && !(opts&&opts.noPOLL)){
     const ep=AI_FREE[0];
     const msStart=Date.now();
     const p=fetchTask('POLL', ep.url, ep.model, ep.key||'', total)
@@ -1785,7 +1786,7 @@ async function aiBuildReading(){
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+(attempt===1?' 再次强调：必须至少'+MINP+'个自然段、全文'+MINW+'词以上，不许偷工减料，篇幅宁可偏长也不要只写几段。':'')+tail;
-    const txt=await aiChat(sys,usr,180000,80,{temp:0.55});
+    const txt=await aiChat(sys,usr,180000,80,{temp:0.55,noPOLL:true});
     if(!txt) continue;
     const j0=extractJSON(txt); if(!j0) continue;
     let j=j0;
@@ -1855,7 +1856,7 @@ async function aiBuildCloze(){
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+(attempt===1?' 再次强调：短文必须达到'+MINW+'词以上，不许只写一段或几句话。':'')+tail;
-    const txt=await aiChat(sys,usr,180000,80,{temp:0.55});
+    const txt=await aiChat(sys,usr,180000,80,{temp:0.55,noPOLL:true});
     if(!txt) continue;
     const j=extractJSON(txt); if(!j) continue;
     const opts=(j.options||[]).filter(function(o){ return o&&o.w&&o.cn; }).slice(0,15)
@@ -3833,7 +3834,7 @@ async function aiBuildLongRead(){
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+(attempt===1?' 再次强调：段落必须 12 个以上、总词数达标、恰好 10 道题且出处段落互不相同。':'')+tail;
-    const txt=await aiChat(sys,usr,180000,80,{temp:0.55});
+    const txt=await aiChat(sys,usr,180000,80,{temp:0.55,noPOLL:true});
     if(!txt) continue;
     const j=extractJSON(txt); if(!j) continue;
     const paras=(j.paras||[]).filter(function(p){ return p&&p.en&&p.en.length>=100; })
