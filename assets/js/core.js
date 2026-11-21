@@ -1837,26 +1837,27 @@ async function aiBuildReading(){
       const halfN=Math.ceil(outline.beats.length/2);
       const beatsTxt=outline.beats.map(function(b,i){ return '第'+(i+1)+'段：'+b; }).join('\n');
       const halfPrompt=function(from,to){
+        const nPara=to-from+1;
         return '按大纲写作《'+outline.title+'》的第 '+from+'-'+to+' 段（另一路正在并写其余段落，你只负责这几段，不要越界）。'+
-          '全文难度：'+SPEC.lvl+'；每段 4-6 句、每句 15-30 词、每句配准确中文翻译；你负责部分总词数约 '+Math.round(MINW*(to-from+1)/outline.beats.length)+' 词，宁多勿少。'+
+          '硬性要求：恰好 '+nPara+' 个自然段，每段写满 4-6 句、每句 15-30 词，每句配准确中文翻译；你负责部分总词数不少于 '+Math.round(MINW*(to-from+1)/outline.beats.length)+' 词——段数不足或词数不足视为不合格，将被判废重写。全文难度：'+SPEC.lvl+'。'+
           '\n完整大纲（保证衔接）：\n'+beatsTxt+
           '\n输出严格 JSON：{"paras":[{"sents":[{"en":"英文句","cn":"中文句"},中间若干句]}]}（只含第 '+from+'-'+to+' 段），禁止解释、markdown 标记。';
       };
       const parseHalf=function(t){ return t? normalizeParas((extractJSON(t)||{}).paras||[]).filter(paraOk) : []; };
       aiLoadingNote('AI 正在双路并写文章（第 1-'+halfN+' 段 ∥ 第 '+(halfN+1)+'-'+outline.beats.length+' 段）…');
       const halves=await Promise.all([
-        aiChat(sys,halfPrompt(1,halfN),110000,350,{temp:0.6,noPOLL:true}).catch(function(){ return null; }),
-        aiChat(sys,halfPrompt(halfN+1,outline.beats.length),110000,350,{temp:0.6,noPOLL:true}).catch(function(){ return null; })
+        aiChat(sys,halfPrompt(1,halfN),110000,1200,{temp:0.6,noPOLL:true}).catch(function(){ return null; }),
+        aiChat(sys,halfPrompt(halfN+1,outline.beats.length),110000,1200,{temp:0.6,noPOLL:true}).catch(function(){ return null; })
       ]);
       let p1=parseHalf(halves[0]), p2=parseHalf(halves[1]);
       /* 半篇失败补写一次（只补失败的那半，成功半篇保留） */
       if(!p1.length){
         aiLoadingNote('前半篇未达标，AI 单独补写中…');
-        p1=parseHalf(await aiChat(sys,halfPrompt(1,halfN),110000,350,{temp:0.6,noPOLL:true}).catch(function(){ return null; }));
+        p1=parseHalf(await aiChat(sys,halfPrompt(1,halfN),110000,1200,{temp:0.6,noPOLL:true}).catch(function(){ return null; }));
       }
       if(!p2.length){
         aiLoadingNote('后半篇未达标，AI 单独补写中…');
-        p2=parseHalf(await aiChat(sys,halfPrompt(halfN+1,outline.beats.length),110000,350,{temp:0.6,noPOLL:true}).catch(function(){ return null; }));
+        p2=parseHalf(await aiChat(sys,halfPrompt(halfN+1,outline.beats.length),110000,1200,{temp:0.6,noPOLL:true}).catch(function(){ return null; }));
       }
       const paras=p1.concat(p2);
       if(paras.length>=3){
