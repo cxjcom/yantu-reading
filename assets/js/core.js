@@ -1572,14 +1572,15 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     });
   };
   /* 单个 OpenAI 兼容 HTTP 端点的一次请求 */
-  const fetchTask=function(name,url,model,key,tm){
+  const fetchTask=function(name,url,model,key,tm,extra){
     const msStart=Date.now();
     const ctrl=new AbortController(); AI_CTRLS.push(ctrl);
     const tmr=setTimeout(function(){ try{ctrl.abort();}catch(e){} }, tm);
     const headers={'Content-Type':'application/json'};
     if(key) headers['Authorization']='Bearer '+key;
+    const payload=Object.assign({model:model,messages:msgs,temperature:temp}, extra||{});
     return fetch(url,{method:'POST',signal:ctrl.signal,headers:headers,
-      body:JSON.stringify({model:model,messages:msgs,temperature:temp})})
+      body:JSON.stringify(payload)})
       .then(function(res){ if(!res.ok) throw new Error('HTTP '+res.status); return res.json(); })
       .then(function(j){ clearTimeout(tmr);
         return (j.choices&&j.choices[0]&&j.choices[0].message)? j.choices[0].message.content : (j.content||''); })
@@ -1599,7 +1600,8 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
       const c = JSON.parse(localStorage.getItem('yt_wbmodels') || 'null');
       if (c && Array.isArray(c.ids) && c.ids.length && (Date.now() - c.t) < 86400000) relayModel = c.ids[0];
     } catch (e) {}
-    tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', relayModel, '', Math.min(total, 175000)), {
+    const relayExtra = cfg.zhipuKey ? { zhipuKey: cfg.zhipuKey } : null;
+    tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', relayModel, '', Math.min(total, 175000), relayExtra), {
       win: function(){ epHealthSet('RELAY_OK', Date.now()); },
       lose: function(){ epHealthSet('RELAY_FAIL', Date.now()); }
     }));
