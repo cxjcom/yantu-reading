@@ -1525,7 +1525,10 @@ function aiDiagSummary(){
     const a=JSON.parse(localStorage.getItem('yt_aidiag')||'[]');
     /* 只认 24 小时内的诊断——旧会话残留条目会污染当前 toast（"兜底1"悬案根源） */
     const fresh=a.filter(function(x){ return x && (Date.now()-(x.t||0)) < 86400000; });
-    const last=fresh[fresh.length-1]; if(!last) return '';
+    /* 兜底说明取"失败那一次"的诊断——带 ok 步骤的是获胜小任务（标题等），其残缺竞速记录
+       （赢家胜出后掐流不记录在途通道）会掩盖文章调用的真实失败原因（如中转的结局） */
+    const failed=fresh.filter(function(x){ return !((x.steps||[]).some(function(s){ return s.st==='ok'; })); });
+    const last=failed.length?failed[failed.length-1]:fresh[fresh.length-1]; if(!last) return '';
     return last.steps.map(function(s){ return s.ep+':'+s.st+(s.x?('('+s.x+')'):''); }).join(' · ').slice(0,150);
   }catch(e){ return ''; }
 }
