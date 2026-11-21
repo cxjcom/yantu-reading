@@ -1279,10 +1279,16 @@ function renderProviderChips(){
   const list=providerList(); const cur=aiCfg().url||'';
   box.innerHTML=list.map(function(p,i){
     const st=(p.url===cur)?'border-color:#2e9e5b;color:#2e9e5b;':'';
-    return '<button data-pi="'+i+'" style="margin-top:0;padding:4px 10px;font-size:12px;border:1px solid #c9b9a0;border-radius:8px;background:#fffdf8;cursor:pointer;'+st+'">'+String(p.name||'方案').replace(/</g,'&lt;')+'<span style="opacity:.65;">·'+keyFingerprint(p.key)+'</span></button>';
+    return '<span style="display:inline-flex;align-items:center;gap:2px;">'
+      +'<button data-pi="'+i+'" style="margin-top:0;padding:4px 10px;font-size:12px;border:1px solid #c9b9a0;border-radius:8px;background:#fffdf8;cursor:pointer;'+st+'" title="点击切换到该方案（地址+模型+Key 整套）">'+String(p.name||'方案').replace(/</g,'&lt;')+'<span style="opacity:.65;">·'+keyFingerprint(p.key)+'</span></button>'
+      +'<button data-del="'+i+'" title="删除该方案（会再次确认）" style="margin:0;padding:3px 7px;font-size:11px;border:1px solid #dcc6b4;border-radius:6px;background:#fff7f2;color:#b3543e;cursor:pointer;">×</button>'
+      +'</span>';
   }).join('') || '<span style="font-size:12px;color:var(--muted,#888);">还没有方案——填好上方三格后点「💾 存为方案」</span>';
   box.querySelectorAll('button[data-pi]').forEach(function(b){
     b.onclick=function(){ window.ytProvPick(parseInt(b.getAttribute('data-pi'),10)); };
+  });
+  box.querySelectorAll('button[data-del]').forEach(function(b){
+    b.onclick=function(){ window.ytProvDel(parseInt(b.getAttribute('data-del'),10)); };
   });
 }
 window.ytProvPick=function(i){
@@ -1296,6 +1302,17 @@ window.ytProvPick=function(i){
   const m=document.getElementById('aiCfgMsg');
   const bad=/bigmodel/i.test(p.url||'') && /^sk-/i.test(p.key||'');
   if(m){ m.textContent= bad ? '⚠️ 已切到「'+(p.name||'方案')+'」，但该方案绑的 Key 是 DeepSeek 格式（sk-），与智谱接口不匹配——请填对智谱 Key 后重新「💾 存为方案」覆盖它' : '✅ 已切换到「'+(p.name||'方案')+'」并保存生效'; m.style.color= bad ? '#d9534f' : '#2e9e5b'; }
+};
+/* 删除方案：二次确认后移除。若删的是当前生效方案，主 Key 三格不清空（配置仍可用），仅提示 */
+window.ytProvDel=function(i){
+  const list=providerList(); const p=list[i]; if(!p) return;
+  if(!window.confirm('确定删除方案「'+(p.name||'方案')+'」吗？\n删除后不可恢复（可随时重新「💾 存为方案」建回）。')) return;
+  list.splice(i,1);
+  providerSaveList(list);
+  renderProviderChips();
+  const m=document.getElementById('aiCfgMsg');
+  const active=aiCfg().url===p.url;
+  if(m){ m.textContent='🗑 已删除方案「'+(p.name||'方案')+'」'+(active?'（它是当前生效配置——主 Key 未改动，仍可继续用；如需清空请手动清空三格并保存）':''); m.style.color='#2e9e5b'; }
 };
 $('#providerSave').onclick=function(){
   const url=document.getElementById('aiUrl').value.trim();
