@@ -1162,12 +1162,20 @@ $('#aiSave').onclick=function(){
 $('#freeKeysSave').onclick=function(){
   const zk=document.getElementById('zhipuKey').value.trim();
   const sk=document.getElementById('siliconKey').value.trim();
+  const m=document.getElementById('freeKeysMsg');
+  /* 槽位防呆：多通道只收智谱/硅基流动 Key——其他家（如 DeepSeek 的 sk- 开头格式）
+     填进来会被送到对应域名做无效鉴权，整链路退化（2026-11-21 实测用户踩坑） */
+  const isDS=function(k){ return /^sk-[0-9a-f]{16,}$/i.test(k); };
+  if(isDS(zk)||isDS(sk)){
+    m.textContent='❌ 检测到 DeepSeek 格式的 Key（sk- 开头）——多通道只收智谱/硅基流动的 Key。DeepSeek 请填上方「主 Key」三格：API 地址 https://api.deepseek.com/chat/completions + 模型名 deepseek-chat + Key，保存后点「测试连通」';
+    m.style.color='#d9534f';
+    return;
+  }
   aiCfgSave({url:(aiCfg().url||''),
              model:(aiCfg().model||''),
              key:(aiCfg().key||''),
              ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b'),
              zhipuKey:zk, siliconKey:sk});
-  const m=document.getElementById('freeKeysMsg');
   const parts=[];
   if(zk) parts.push('智谱 ✅');
   if(sk) parts.push('硅基流动 ✅');
