@@ -1639,10 +1639,14 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   let raceStarted=false;
   const health=epHealth();
   const now=Date.now();
+  /* 单通道模式：主 Key 指定了模型（cfg.url）时，生成只走该模型——
+     中转/WB/Pollinations/Ollama 一律不参赛（2026-11-21 用户要求：指定即唯一）。
+     指定模型全挂时 aiChat 返回 null，由本地引擎兜底 */
+  const singleMode=!!cfg.url;
   /* ⓪ 同源中转：手机运营商常拦外部 AI 域名——Cloudflare 边缘同源代调
      （functions/api/ai.js），同源永不被拦；仅线上 https 启用，本地 404 无意义。
-     模型 id 优先透传缓存里的 WB 模型（与直连 WB 同质量） */
-  if (typeof location !== 'undefined' && location.protocol === 'https:' && location.hostname.indexOf('pages.dev') >= 0) {
+     模型 id 优先透传缓存里的 WB 模型（与直连 WB 同质量）。单通道模式不参赛 */
+  if (!singleMode && typeof location !== 'undefined' && location.protocol === 'https:' && location.hostname.indexOf('pages.dev') >= 0) {
     let relayModel = 'auto';
     try {
       const c = JSON.parse(localStorage.getItem('yt_wbmodels') || 'null');
@@ -1656,7 +1660,8 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   /* ① 自定义端点：用户付费配置，永远参赛 */
   if(cfg.url) tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000))));
   /* ② WB 云端：模型 id 优先用 localStorage 缓存（24h）——列表请求失败/超时不再把 WB 判死；
-     无缓存才请求列表（12s 超时），仍失败则盲试 'auto'（历次实测必通） */
+     无缓存才请求列表（12s 超时），仍失败则盲试 'auto'（历次实测必通）。单通道模式不参赛 */
+  if(!singleMode){
   let wbId='';
   let wbBlind=false;              /* 列表被拦 ≠ 聊天被拦（手机运营商常见）：盲试 'auto'，失败也只花几秒 */
   let wbCachedIds=null;
@@ -1700,10 +1705,11 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     mark('WB','不可达/无模型',Date.now()-t0);
     epHealthSet('WB_FAIL', Date.now());
   }
+  }
   /* ③ Pollinations 免费档：默认参赛（上游 45s/IP 与 402 是对方服务器的限制，撞上即快速失败换下一通道）。
      opts.noPOLL 时禁赛——大请求（文章/补齐/续写）它最快但 ~5000 字符必截断且句式残次，
-     赢下竞速反而毒化全部救援链，中转/智谱永远抢不到上场机会（2026-11-21 实测修复） */
-  if(AI_FREE.length && !(opts&&opts.noPOLL)){
+     赢下竞速反而毒化全部救援链，中转/智谱永远抢到上场机会（2026-11-21 实测修复）。单通道模式不参赛 */
+  if(!singleMode && AI_FREE.length && !(opts&&opts.noPOLL)){
     const ep=AI_FREE[0];
     const msStart=Date.now();
     const p=fetchTask('POLL', ep.url, ep.model, ep.key||'', total)
@@ -1715,9 +1721,9 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
       });
     tasks.push(wrap('POLL', msStart, p));
   }
-  /* ④ Ollama 本地：3s 内探测可达才加入竞速（不阻塞其他端点） */
+  /* ④ Ollama 本地：3s 内探测可达才加入竞速（不阻塞其他端点）。单通道模式不参赛 */
   ollamaProbe().then(function(ok){
-    if(ok && !settled && !AI_CANCEL && !raceStarted){
+    if(!singleMode && ok && !settled && !AI_CANCEL && !raceStarted){
       tasks.push(wrap('Ollama', Date.now(), fetchTask('Ollama','http://localhost:11434/v1/chat/completions', cfg.ollamaModel||'qwen2.5:7b','', Math.min(total,120000))));
     }
   });
