@@ -1815,76 +1815,12 @@ async function aiBuildReading(){
   const base='随机生成一篇考研英语阅读理解文章。要求：主题随机（科技/生态/社会/心理/经济/教育/医疗等），'+SPEC.pTxt+'，全文'+SPEC.wTxt+'（硬性标准：段数少于'+MINP+'段或总词数低于'+MINW+'词视为无效输出，将被判不合格；每段至少4-6句、每句15-30词，篇幅宁多勿少）；词汇与句式难度：'+SPEC.lvl+'（词汇难度必须与考试层级严格匹配，不得超纲或降级）；每段每句给准确中文翻译。';
   const tail='输出JSON格式：{"title":"英文标题","titleCn":"中文标题","paras":[{"sents":[{"en":"英文句","cn":"中文句"},中间若干句]}]}。'+
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
-  /* ========== 并行流水线（2026-11-21 提速）：大纲 → 前后半篇并发写作 → 词表∥题目并发 ==========
-     墙钟 ~90-110s（单发串行 ~150-180s）。两半共享大纲保证连贯；任何一环失败
-     自动落回下方传统单发路径（救援链全保留），成功率不降。 */
-  const wcOf=function(ps){ let n=0; ps.forEach(function(pa){ pa.forEach(function(s){ n+=s.en.trim().split(/\s+/).length; }); }); return n; };
+  /* ========== 单发主路径（实测最优：154-159s 形态；半篇并行被实测证伪——智谱对
+     "写第 5-8 段"类指令倾向 900 字偷工，重试/兜底 churn 反而 247s，已回退） ========== */
+  /* 字数容差：差 40 词以内（或 88%）也算合格；宽容验收线 MINP-3 段（段数是量的代理指标，词数才是量的本身） */
   const WC_MIN=Math.max(MINW-40, Math.round(MINW*0.88));
   const MINP_EFF=Math.max(4, MINP-3);
   const LVL_SHORT=({cet4:'四级',cet6:'六级',std:'考研',plus:'考研'}[diffNow]||'考研');
-  try{
-    /* 阶段 0：大纲（~500-800 字，10-15s）——两半并写的共享蓝图 */
-    aiLoadingNote('AI 正在拟定文章大纲…');
-    const oTxt=await aiChat(sys,
-      '随机拟一篇'+LVL_SHORT+'英语阅读文章的写作大纲'+(avoid.length?'，主题与标题必须避开：'+avoid.join(' / '):'')+
-      '。要求：主题随机（科技/生态/社会/心理/经济/教育/医疗等），共 '+MINP+' 个自然段、全文约 '+MINW+'-'+(MINW+80)+' 词；给出英文标题、中文标题和每段一句话要点（第 1 段引入话题，中段展开论证与例证，末段总结展望）。'+
-      '输出严格 JSON：{"title":"英文标题","titleCn":"中文标题","beats":["第1段要点","第2段要点","…"]}，beats 恰好 '+MINP+' 条，禁止解释、markdown 标记。',
-      60000, 80, {temp:0.85, noPOLL:true});
-    const oj=oTxt?extractJSON(oTxt):null;
-    const outline=(oj && oj.title && Array.isArray(oj.beats) && oj.beats.length>=4)? oj : null;
-    if(outline){
-      /* 阶段 1：两半并发写作（每半 ~2500-3000 字，并发墙钟 ~40-55s） */
-      const halfN=Math.ceil(outline.beats.length/2);
-      const beatsTxt=outline.beats.map(function(b,i){ return '第'+(i+1)+'段：'+b; }).join('\n');
-      const halfPrompt=function(from,to){
-        const nPara=to-from+1;
-        return '按大纲写作《'+outline.title+'》的第 '+from+'-'+to+' 段（另一路正在并写其余段落，你只负责这几段，不要越界）。'+
-          '硬性要求：恰好 '+nPara+' 个自然段，每段写满 4-6 句、每句 15-30 词，每句配准确中文翻译；你负责部分总词数不少于 '+Math.round(MINW*(to-from+1)/outline.beats.length)+' 词——段数不足或词数不足视为不合格，将被判废重写。全文难度：'+SPEC.lvl+'。'+
-          '\n完整大纲（保证衔接）：\n'+beatsTxt+
-          '\n输出严格 JSON：{"paras":[{"sents":[{"en":"英文句","cn":"中文句"},中间若干句]}]}（只含第 '+from+'-'+to+' 段），禁止解释、markdown 标记。';
-      };
-      const parseHalf=function(t){ return t? normalizeParas((extractJSON(t)||{}).paras||[]).filter(paraOk) : []; };
-      aiLoadingNote('AI 正在双路并写文章（第 1-'+halfN+' 段 ∥ 第 '+(halfN+1)+'-'+outline.beats.length+' 段）…');
-      const halves=await Promise.all([
-        aiChat(sys,halfPrompt(1,halfN),110000,1200,{temp:0.6,noPOLL:true}).catch(function(){ return null; }),
-        aiChat(sys,halfPrompt(halfN+1,outline.beats.length),110000,1200,{temp:0.6,noPOLL:true}).catch(function(){ return null; })
-      ]);
-      let p1=parseHalf(halves[0]), p2=parseHalf(halves[1]);
-      /* 半篇失败补写一次（只补失败的那半，成功半篇保留） */
-      if(!p1.length){
-        aiLoadingNote('前半篇未达标，AI 单独补写中…');
-        p1=parseHalf(await aiChat(sys,halfPrompt(1,halfN),110000,1200,{temp:0.6,noPOLL:true}).catch(function(){ return null; }));
-      }
-      if(!p2.length){
-        aiLoadingNote('后半篇未达标，AI 单独补写中…');
-        p2=parseHalf(await aiChat(sys,halfPrompt(halfN+1,outline.beats.length),110000,1200,{temp:0.6,noPOLL:true}).catch(function(){ return null; }));
-      }
-      const paras=p1.concat(p2);
-      if(paras.length>=3){
-        /* 阶段 1.5：验收 + 一次合并补齐（大纲制导+词数预算下通常直接达标） */
-        let wc=wcOf(paras);
-        if(paras.length<MINP_EFF || wc<WC_MIN){
-          aiLoadingNote('文章篇幅差一点，AI 正在补齐段落…');
-          const needW=Math.max((MINP-paras.length)*90, WC_MIN-wc+60, 80);
-          const tp=await aiGenTail(sys, paras, needW, SPEC.lvl);
-          if(tp && tp.length){ paras=paras.concat(tp); wc=wcOf(paras); }
-        }
-        if(paras.length>=MINP_EFF && wc>=WC_MIN){
-          /* 阶段 2：词表 ∥ 题目 并发（各 ~800/1800 字，墙钟 ~20-35s） */
-          aiLoadingNote('AI 正在生成配套题目与词表…');
-          const artText=paras.map(function(pa){ return pa.map(function(s){ return s.en; }).join(' '); }).join('\n').slice(0,6000);
-          const rw=await Promise.all([
-            aiBuildReadingWords(artText, LVL_SHORT).catch(function(){ return null; }),
-            aiBuildReadingQs(artText, LVL_SHORT).catch(function(){ return null; })
-          ]);
-          return {titleEn:String(outline.title||'AI Reading'), titleCn:String(outline.titleCn||''),
-                  paras:paras, words:(rw[0]&&rw[0].words)||[], qs:(rw[1]&&rw[1].qs)||[], src:'ai'};
-        }
-      }
-      /* 并行路径未达标 → 落到下方传统单发路径 */
-    }
-  }catch(e){ /* 并行流水线任何异常 → 传统路径兜底 */ }
-  /* ========== 传统单发路径（兜底，救援链全保留） ========== */
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+' 再次强调：必须至少'+MINP+'个自然段、全文'+(MINW+40)+'词以上，不许偷工减料，篇幅宁可偏长也不要只写几段。'+tail;
     const txt=await aiChat(sys,usr,180000,80,{temp:0.55,noPOLL:true});
