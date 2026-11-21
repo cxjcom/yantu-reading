@@ -4100,14 +4100,19 @@ function audioCtx(){
   var sp=document.getElementById('splash');
   if(!sp) return;
   if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches){ sp.remove(); return; }
-  /* 锁滚改类开关式（v1.10.26）：body:has(#splash) 依赖节点移除才解锁——
+  /* 锁滚改类开关式（v1.10.26/27）：body:has(#splash) 依赖节点移除才解锁——
      手机端若节点移除失败（省电模式停动画等），整个会话 body 锁死不能滑。
-     类开关保证 end() 必解锁；补 3s 心跳兜底 */
+     三重保险：end() 必解锁 + 心跳检测（节点没了强制收尾）+ 12 秒硬顶
+     （无论 splash 处于什么状态，加载 12 秒后必定解锁——宁可画面跳一下也不锁死） */
   var bl=function(on){ try{ document.body.classList[on?'add':'remove']('splash-lock'); }catch(e){} };
+  var started=Date.now();
   bl(true);
   var done=false;
-  function end(){ if(done) return; done=true; bl(false); if(sp.parentNode) sp.parentNode.removeChild(sp); }
-  var heartbeat=setInterval(function(){ if(done||!sp.parentNode){ clearInterval(heartbeat); end(); } }, 3000);
+  function end(){ if(done) return; done=true; bl(false); try{ if(sp.parentNode) sp.parentNode.removeChild(sp); }catch(e){} }
+  var heartbeat=setInterval(function(){
+    if(done){ clearInterval(heartbeat); return; }
+    if(!sp.parentNode || Date.now()-started>12000){ clearInterval(heartbeat); end(); }
+  }, 1000);
   function skip(){ if(done) return; done=true; sp.classList.add('spSkip'); setTimeout(end, 420); }
   sp.addEventListener('animationend', function(ev){ if(ev.animationName==='spExit') end(); });
   sp.addEventListener('click', skip);
