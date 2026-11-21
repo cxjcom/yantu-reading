@@ -1461,7 +1461,7 @@ try{
     });
   }
 }catch(e){ WB_CLOUD=null; }
-async function wbCloudChat(msgs,timeoutMs,temp,modelId){
+async function wbCloudChat(msgs,timeoutMs,temp,modelId,extraCtrlList){
   let txt='';
   if(!WB_CLOUD||!modelId) return txt;
   try{
@@ -1469,7 +1469,7 @@ async function wbCloudChat(msgs,timeoutMs,temp,modelId){
     const outMsgs=(msgs[0]&&msgs[0].role==='system')?msgs
       :[{role:'system',content:'You are a helpful assistant. Be concise and helpful.'}].concat(msgs);
     const ctrl=new AbortController();
-    AI_CTRLS.push(ctrl);
+    AI_CTRLS.push(ctrl); if(extraCtrlList) extraCtrlList.push(ctrl);   /* extraCtrlList=本轮竞速名单（胜者掐流用） */
     /* 无空闲掐断（用户要求无时间限制）：流式只要还在产 token 就继续等，
        仅保留 total 硬顶防挂死 */
     const total=timeoutMs||60000, t0=Date.now();
@@ -1583,7 +1583,7 @@ function epHealth(){ try{ return JSON.parse(localStorage.getItem('yt_ephealth')|
 function epHealthSet(k,v){ try{ var h=epHealth(); h[k]=v; localStorage.setItem('yt_ephealth', JSON.stringify(h)); }catch(e){} }
 async function aiChat(sys,usr,timeoutMs,minLen,opts){
   AI_CANCEL=false;   /* 复位取消标记（上次任务取消后不污染本次，「测试连通」不再永久失败） */
-  AI_CTRLS=[];
+  const ctrls=[];    /* 本轮竞速的控制器：并发流水线下每路 aiChat 各自独立，胜者只掐自己一轮的输家 */
   const msgs=[{role:'system',content:sys},{role:'user',content:usr}];
   const temp=(opts&&opts.temp!=null)?opts.temp:0.75;
   const minL=minLen||80;
@@ -1591,7 +1591,7 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   const diag=[];
   const mark=function(ep,st,ms,x){ diag.push({ep:ep,st:st,ms:Math.round(ms),x:x||''}); };
   let settled=false;
-  const abortLosers=function(){ AI_CTRLS.forEach(function(c){ try{c.abort();}catch(e){} }); AI_CTRLS=[]; };
+  const abortLosers=function(){ ctrls.forEach(function(c){ try{c.abort();}catch(e){} }); };
   const total=timeoutMs||180000;
   /* 包装一次端点尝试：最先拿到"足够长文本"的端点胜出，立即掐掉其余流 */
   const wrap=function(name,msStart,p,hooks){
@@ -1617,7 +1617,8 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
   /* 单个 OpenAI 兼容 HTTP 端点的一次请求 */
   const fetchTask=function(name,url,model,key,tm,extra){
     const msStart=Date.now();
-    const ctrl=new AbortController(); AI_CTRLS.push(ctrl);
+    const ctrl=new AbortController(); ctrls.push(ctrl); AI_CTRLS.push(ctrl);
+    if(AI_CTRLS.length>60) AI_CTRLS=AI_CTRLS.slice(-60);   /* 取消注册表限长，防长会话膨胀 */
     const tmr=setTimeout(function(){ try{ctrl.abort();}catch(e){} }, tm);
     const headers={'Content-Type':'application/json'};
     if(key) headers['Authorization']='Bearer '+key;
@@ -1686,12 +1687,12 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     }
   }
   if(wbId && WB_CLOUD){
-    tasks.push(wrap('WB:'+wbId, Date.now(), wbCloudChat(msgs,total,temp,wbId), {
+    tasks.push(wrap('WB:'+wbId, Date.now(), wbCloudChat(msgs,total,temp,wbId,ctrls), {
       win:function(){ epHealthSet('WB_OK', Date.now()); },
       lose:function(){ epHealthSet('WB_FAIL', Date.now()); }
     }));
   }else if(wbBlind && WB_CLOUD){
-    tasks.push(wrap('WB:auto', Date.now(), wbCloudChat(msgs,Math.min(total,90000),temp,'auto'), {
+    tasks.push(wrap('WB:auto', Date.now(), wbCloudChat(msgs,Math.min(total,90000),temp,'auto',ctrls), {
       win:function(){ epHealthSet('WB_OK', Date.now()); },
       lose:function(){ epHealthSet('WB_FAIL', Date.now()); }
     }));
