@@ -1432,6 +1432,13 @@ function aiLoadingDone(ok,note,label){
   const cb=el.querySelector('.aiCard button'); if(cb) cb.style.display='none';
 }
 function aiLoadingWait(ms){ return new Promise(function(res){ setTimeout(res,ms); }); }
+/* 生成阶段进度：让用户看到 AI 走到哪一步（写字 ~80s、补齐 ~40s、命题 ~40s），
+   免得长等待像卡死；AI_BUSY 为假（直接调用的测试）时静默 */
+function aiLoadingNote(text){
+  if(!AI_BUSY) return;
+  const k=document.getElementById('aiKind');
+  if(k) k.textContent=text;
+}
 function aiLoadingHide(){
   const el=document.getElementById('aiLoad'); if(el) el.style.display='none';
   if(AI_TMR){ clearInterval(AI_TMR); AI_TMR=null; }
@@ -1826,25 +1833,36 @@ async function aiBuildReading(){
       return {titleEn:String(j.title||'AI Reading'), titleCn:String(j.titleCn||''),
               paras:paras, words:[], qs:[], src:'ai'};
     };
-    let done=tryFinish(); if(done) return done;
+    /* 命题调用投机并行：文章标题+段落一出就发起，与后续救援并发跑（省 40-60s）；
+       整轮失败时只多一次 2500 字调用，无用户可见影响 */
+    let qwP=null;
+    const startQs=function(){
+      if(qwP) return;
+      aiLoadingNote('AI 正在生成配套题目与词表…');
+      const artText=paras.map(function(pa){ return pa.map(function(s){ return s.en; }).join(' '); }).join('\n').slice(0,6000);
+      qwP=aiBuildReadingQs(artText, ({cet4:'四级',cet6:'六级',std:'考研',plus:'考研'}[diffNow]||'考研')).catch(function(){ return null; });
+    };
+    let done=tryFinish();
+    if(done) startQs();
     /* 救援 1：仅 JSON 未闭合时才做截断续写——闭合 JSON 的续写合并是纯浪费（实测 446/606 字无效调用） */
-    if(canCont && !closed && (!j.title || paras.length<MINP_EFF || wc<WC_MIN)){
+    if(!done && canCont && !closed && (!j.title || paras.length<MINP_EFF || wc<WC_MIN)){
       const c=await aiContinueTruncated(sys, txt, paras);
       if(c){ j=c.j; paras=c.paras; wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
     }
-    done=tryFinish(); if(done) return done;
+    done=tryFinish(); if(done) startQs();
     /* 救援 2：段数或词数不足 → 一次分段补齐同时补齐两者
        （needWords 取 段差×90词 与 词差+60 的大者，moreN 随之放大——
         2026-11-21 实测两缺时常同时缺，合并后省一次 60-110s 的补齐调用） */
-    if(j.title && canCont && (paras.length<MINP || wc<WC_MIN)){
+    if(!done && j.title && canCont && (paras.length<MINP || wc<WC_MIN)){
+      aiLoadingNote('文章篇幅差一点，AI 正在补齐段落…');
       const needW=Math.max((MINP-paras.length)*90, WC_MIN-wc+60, 80);
       const tail=await aiGenTail(sys, paras, needW, SPEC.lvl);
       if(tail && tail.length){ paras=paras.concat(tail); wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
     }
-    done=tryFinish(); if(!done) continue;   /* 文章本体两轮都没达标 → 走本地引擎 */
-    /* 第二段调用：配套命题/词表（独立小调用，失败仅降级为无题文章，不牵动验收） */
-    const artText=done.paras.map(function(pa){ return pa.map(function(s){ return s.en; }).join(' '); }).join('\n').slice(0,6000);
-    const qw=await aiBuildReadingQs(artText, ({cet4:'四级',cet6:'六级',std:'考研',plus:'考研'}[diffNow]||'考研'));
+    done=tryFinish();
+    if(!done){ aiLoadingNote('第 '+(attempt+1)+' 轮未达标'+(attempt===0?'，AI 重写中（第 2 轮，约再需 1-2 分钟）…':'')); continue; }
+    if(!qwP) startQs();
+    const qw=await qwP;
     if(qw){ done.words=qw.words; done.qs=qw.qs; }
     return done;
   }
@@ -3513,7 +3531,7 @@ $('#wSpeak').onclick=speakWord;
 async function generateAndShow(){
   if(AI_BUSY) return;
   if(AI_MODE){
-    AI_BUSY=true; aiLoadingShow('🌐 AI 生成阅读文章');
+    AI_BUSY=true; aiLoadingShow('🌐 AI 正在写文章（免费模型约需 1-3 分钟，请勿关闭）');
     var ai=null;
     try{ ai=await aiBuildReading(); }catch(e){}
     if(ai){ aiLoadingDone(true); await aiLoadingWait(1300); aiLoadingHide(); showToast('✅ AI 生成成功'); }
