@@ -40,20 +40,24 @@ export async function onRequestPost(context) {
     diag.wb = '竞速全空 (' + diag.wb + ')';
   } catch (e) { diag.wb = 'ERR:' + String(e && e.message || e).slice(0, 60); }
 
-  /* ② Cloudflare Workers AI（后台加 AI 绑定后自动启用；免 key，稳定） */
+  /* ② Cloudflare Workers AI（后台加 AI 绑定后自动启用；免 key，稳定）
+     双模型顺序回退：70b 质量优先，8b 快速兜底 */
   if (aiBinding) {
-    try {
-      const r = await aiBinding.run('@cf/qwen/qwen1.5-14b-chat-awq', {
-        messages: msgs,
-        temperature: body.temperature != null ? body.temperature : 0.6
-      });
-      const t = r && (r.response || (r.choices && r.choices[0] && r.choices[0].message ? r.choices[0].message.content : null));
-      const L = (t || '').trim().length;
-      diag.wa = L + '字';
-      if (t && L > 2) {
-        return json({ choices: [{ message: { role: 'assistant', content: String(t) } }] });
-      }
-    } catch (e) { diag.wa = 'ERR:' + String(e && e.message || e).slice(0, 60); }
+    const waModels = ['@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/meta/llama-3.1-8b-instruct'];
+    for (const m of waModels) {
+      try {
+        const r = await aiBinding.run(m, {
+          messages: msgs,
+          temperature: body.temperature != null ? body.temperature : 0.6
+        });
+        const t = r && (r.response || (r.choices && r.choices[0] && r.choices[0].message ? r.choices[0].message.content : null));
+        const L = (t || '').trim().length;
+        diag.wa = m.split('/').pop() + ':' + L + '字';
+        if (t && L > 2) {
+          return json({ choices: [{ message: { role: 'assistant', content: String(t) } }] });
+        }
+      } catch (e) { diag.wa = m.split('/').pop() + ':ERR:' + String(e && e.message || e).slice(0, 50); }
+    }
   }
 
   /* ③ Pollinations 服务端回落 */
@@ -159,4 +163,14 @@ async function wbChat(model, msgs, temperature) {
     clearTimeout(hard);
     return '';
   }
+}
+
+/* 调试端点：GET /api/ai?debug=1 返回绑定状态（不含敏感信息） */
+export async function onRequestGet(context) {
+  const url = new URL(context.request.url);
+  if (url.searchParams.get('debug') !== '1') return json({ ok: false }, 404);
+  return json({
+    hasAI: !!(context.env && context.env.AI),
+    keys: context.env ? Object.keys(context.env) : []
+  });
 }
