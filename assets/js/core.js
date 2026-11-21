@@ -1496,7 +1496,7 @@ async function aiContinueTruncated(sys, txt, paras){
   const moreTxt=await aiChat(sys,
     '你上一条回复的 JSON 在中途被截断了。以下是已输出内容的最后 240 字符：'+txt.slice(-240)+
     '\n请从中断处直接继续输出剩余内容直到 JSON 完整闭合：禁止重复已输出内容、禁止输出任何解释或 markdown 代码块标记。',
-    150000, 30, {temp:0.55});
+    150000, 200, {temp:0.55});
   if(!moreTxt) return null;
   const j2=extractJSON(txt+'\n'+moreTxt)||extractJSON(moreTxt);
   if(!j2 || !j2.title || !j2.paras) return null;
@@ -1510,7 +1510,9 @@ async function aiContinueTruncated(sys, txt, paras){
 }
 /* 长文分段补齐：免费模型单次输出 ~5000 字上限，540+ 词一次写不完——
    把已写段落开头作为上下文，单独请求"后续自然段"（独立 JSON），
-   拼接段落数组后由调用方重新校验总词数 */
+   拼接段落数组后由调用方重新校验总词数。
+   minL=800：竞速门槛提到 800 字，快速残次续写（如 POLL 的 500 字碎片）直接判负，
+   让位给中转/智谱的真续写；段落结构质量仍由下方过滤把关（2026-11-21 实测修复） */
 async function aiGenTail(sys, paras, needWords, lvl){
   const ctx=paras.map(function(pa){ return pa.map(function(s){ return s.en; }).join(' '); }).join('\n').slice(0,1100);
   const moreN=Math.max(3, Math.ceil(needWords/55)+2);
@@ -1518,7 +1520,7 @@ async function aiGenTail(sys, paras, needWords, lvl){
     '\n\n请继续写这篇文章的后半部分：再写 '+moreN+' 个自然段（每段 4-6 句，英文每句 15-30 词并配准确中文翻译），'+
     '衔接前文主题与论证，不要重复已有内容。'+(lvl||'')+
     '\n输出严格 JSON 对象：{"paras":[{"sents":[{"en":"英文句","cn":"中文句"}]}]}，禁止解释、禁止 markdown 标记。';
-  const txt=await aiChat(sys,usr,170000,50,{temp:0.55});
+  const txt=await aiChat(sys,usr,170000,800,{temp:0.55});
   if(!txt) return null;
   const j=extractJSON(txt);
   if(!j || !j.paras) return null;
