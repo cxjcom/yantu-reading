@@ -33,6 +33,42 @@ export async function onRequestPost(context) {
   /* 诊断信息：各通道失败原因，最终 502 时随 body 返回 */
   let diag = {};
 
+  /* ⓪ 通用端点代调：客户端传自定义 OpenAI 兼容端点（ep:{url,model,key}）时服务端直调——
+     解决无 CORS 服务商（如智谱 bigmodel）浏览器直连必败的问题。
+     防滥用白名单：仅 https 且路径以 /chat/completions 结尾（不是通用代理） */
+  if (body.ep && body.ep.url && body.ep.model) {
+    const eu = String(body.ep.url).replace(/\/+$/, '');
+    if (/^https:\/\/[^/]+\/chat\/completions$/.test(eu)) {
+      try {
+        const r = await fetch(eu, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + String(body.ep.key || '').slice(0, 300)
+          },
+          body: JSON.stringify({
+            model: String(body.ep.model).slice(0, 100),
+            messages: msgs,
+            temperature: body.temperature != null ? body.temperature : 0.6,
+            stream: false
+          })
+        });
+        if (r.ok) {
+          const j = await r.json().catch(function () { return null; });
+          const t = j && j.choices && j.choices[0] && j.choices[0].message ? j.choices[0].message.content : null;
+          if (t && t.trim().length > 2) {
+            return json({ choices: [{ message: { role: 'assistant', content: String(t) } }] });
+          }
+          diag.ep = 'HTTP ' + r.status + ' 空内容';
+        } else {
+          diag.ep = 'HTTP ' + r.status;
+        }
+      } catch (e) { diag.ep = 'ERR:' + String(e && e.message || e).slice(0, 50); }
+    } else {
+      diag.ep = '端点不合规';
+    }
+  }
+
   /* ① WB 云端多模型顺序回退（SSE 聚合，长度达标判断） */
   try {
     const text = await wbRace(msgs, body.temperature, body.model, diag);

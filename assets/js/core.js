@@ -1657,8 +1657,18 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
       lose: function(){ epHealthSet('RELAY_FAIL', Date.now()); }
     }));
   }
-  /* ① 自定义端点：用户付费配置，永远参赛 */
-  if(cfg.url) tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000))));
+  /* ① 自定义端点：用户付费配置，永远参赛。
+     无 CORS 服务商（如智谱 bigmodel）浏览器直连必败——同参走中转服务端代调并发兜着，
+     两路谁通用谁赢（DeepSeek 有 CORS 时直连先赢，中转那路服务端调用作废仅损几厘） */
+  if(cfg.url){
+    tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000))));
+    if(typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){
+      tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', cfg.model||'', '', Math.min(total,175000), {ep:{url:cfg.url, model:cfg.model||'', key:cfg.key||''}}), {
+        win:function(){ epHealthSet('RELAY_OK', Date.now()); },
+        lose:function(){ epHealthSet('RELAY_FAIL', Date.now()); }
+      }));
+    }
+  }
   /* ② WB 云端：模型 id 优先用 localStorage 缓存（24h）——列表请求失败/超时不再把 WB 判死；
      无缓存才请求列表（12s 超时），仍失败则盲试 'auto'（历次实测必通）。单通道模式不参赛 */
   if(!singleMode){
