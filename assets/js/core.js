@@ -1500,11 +1500,7 @@ async function aiContinueTruncated(sys, txt, paras){
   if(!moreTxt) return null;
   const j2=extractJSON(txt+'\n'+moreTxt)||extractJSON(moreTxt);
   if(!j2 || !j2.title || !j2.paras) return null;
-  const paras2=(j2.paras||[]).map(function(p){
-    return (p.sents||[]).filter(function(s){ return s&&s.en; }).map(function(s){
-      return {en:String(s.en).trim(), cn:String(s.cn||'').trim(), g:''};
-    });
-  }).filter(function(a){ return a.length>=3 && a.every(function(s){ return s.en.length>=25 && s.cn; }); });
+  const paras2=normalizeParas(j2.paras||[]).filter(paraOk);
   if(paras2.length < paras.length) return null;
   return {j:j2, paras:paras2};
 }
@@ -1520,16 +1516,42 @@ async function aiGenTail(sys, paras, needWords, lvl){
     '\n\n请继续写这篇文章的后半部分：再写 '+moreN+' 个自然段（每段 4-6 句，英文每句 15-30 词并配准确中文翻译），'+
     '衔接前文主题与论证，不要重复已有内容。'+(lvl||'')+
     '\n输出严格 JSON 对象：{"paras":[{"sents":[{"en":"英文句","cn":"中文句"}]}]}，禁止解释、禁止 markdown 标记。';
-  const txt=await aiChat(sys,usr,170000,800,{temp:0.55,noPOLL:true});
+  const txt=await aiChat(sys,usr,110000,800,{temp:0.55,noPOLL:true});
   if(!txt) return null;
   const j=extractJSON(txt);
   if(!j || !j.paras) return null;
-  const t=(j.paras||[]).map(function(p){
-    return (p.sents||[]).filter(function(s){ return s&&s.en; }).map(function(s){
-      return {en:String(s.en).trim(), cn:String(s.cn||'').trim(), g:''};
-    });
-  }).filter(function(a){ return a.length>=3 && a.every(function(s){ return s.en.length>=25 && s.cn; }); });
+  const t=normalizeParas(j.paras||[]).filter(paraOk);
   return t.length ? t : null;
+}
+/* 结构归一化：模型偶发不按 sents 数组、而按"段落级 en/cn 字符串"输出——
+   2026-11-21 实测：智谱 7222 字完整 JSON（题目 5 / 词表 10 全齐）5 段全为段落级字符串，
+   旧过滤器按 sents 读取得 0 句 → 验收全灭 → 反复重试（用户实测拖到 9 分钟）。
+   处理：段落级结构按 [.!?] 切英文句、[。！？；] 切中文句，数量一致时按序配对；
+   切分数不一致时整段并作一句（en/cn 完整保留） */
+function normalizeParas(raw){
+  return (raw||[]).map(function(p){
+    if(p && Array.isArray(p.sents)){
+      return p.sents.filter(function(s){ return s&&s.en; }).map(function(s){
+        return {en:String(s.en).trim(), cn:String(s.cn||'').trim(), g:''};
+      });
+    }
+    if(p && typeof p.en==='string' && p.en.trim().length>=25){
+      const en=String(p.en).trim(), cn=String(p.cn||'').trim();
+      const enS=(en.match(/[^.!?]+[.!?]+["')\]]*\s*/g)||[en]).map(function(x){ return x.trim(); }).filter(Boolean);
+      const cnS=(cn.match(/[^。！？；]+[。！？；]?/g)||[cn]).map(function(x){ return x.trim(); }).filter(Boolean);
+      if(enS.length>1 && cnS.length===enS.length){
+        return enS.map(function(e,i){ return {en:e, cn:cnS[i], g:''}; });
+      }
+      return [{en:en, cn:cn, g:''}];
+    }
+    return [];
+  });
+}
+/* 段落合格线：≥3 句（每句 ≥25 字符 + 有中文），或"单句但整段 ≥120 字符"的段落级合并块 */
+function paraOk(a){
+  if(!a || !a.length) return false;
+  return a.length>=3 ? a.every(function(s){ return s.en.length>=25 && s.cn; })
+                     : (a.length===1 && a[0].en.length>=120 && a[0].cn);
 }
 function aiDiagSummary(){
   try{
@@ -1790,52 +1812,49 @@ async function aiBuildReading(){
     if(!txt) continue;
     const j0=extractJSON(txt); if(!j0) continue;
     let j=j0;
-    let paras=(j.paras||[]).map(function(p){
-      return (p.sents||[]).filter(function(s){ return s&&s.en; }).map(function(s){
-        return {en:String(s.en).trim(), cn:String(s.cn||'').trim(), g:''};
-      });
-    }).filter(function(a){ return a.length>=3 && a.every(function(s){ return s.en.length>=25 && s.cn; }); });
+    let paras=normalizeParas(j.paras||[]).filter(paraOk);
     const canCont=txt.length>3000 && txt.length<9000;
-    if(canCont && (!j.title || paras.length<MINP)){
-      const c=await aiContinueTruncated(sys, txt, paras);
-      if(c){ j=c.j; paras=c.paras; }
-    }
-    /* 段数不足（免费模型 5000 字符单发常只有 5-7 段，缺 1-3 段）：标题有效时用分段补齐补段落
-       （2026-11-21 实测：此前段数不足直接进下一轮重试，而 POLL 重试同样写不满 → 永远到不了分段补齐，
-        minL=800 的补齐调用会让中转/智谱交出真段落） */
-    if(j.title && paras.length<MINP && canCont){
-      const tailP=await aiGenTail(sys, paras, (MINP-paras.length)*90, SPEC.lvl);
-      if(tailP && tailP.length){ paras=paras.concat(tailP); }
-    }
-    if(!j.title || paras.length<MINP) continue;
-    var wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); });
+    const closed=(function(){ const t=String(txt).replace(/```[a-zA-Z]*/g,'').replace(/```/g,'').trim(); return t.slice(-1)==='}'; })();
+    let wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); });
     /* 字数容差：差 40 词以内（或 88%）也算合格——真 AI 略短也远好于回落本地，避免白耗两次整生成 */
     const WC_MIN=Math.max(MINW-40, Math.round(MINW*0.88));
-    if(wc<WC_MIN && canCont){
-      /* ① 真·截断（JSON 未闭合）：续写合并 */
+    /* 宽容验收线：MINP-3 段 + 词数达标直接收货（段数是量的代理指标，词数才是量的本身） */
+    const MINP_EFF=Math.max(4, MINP-3);
+    const tryFinish=function(){
+      if(!j.title || paras.length<MINP_EFF || wc<WC_MIN) return null;
+      const words=(j.words||[]).filter(function(w){ return w&&w.w; }).slice(0,14)
+        .map(function(w){ return {w:String(w.w), cn:String(w.cn||'')}; });
+      /* AI 命题的阅读理解题：校验结构（题干 + 4 选项 + 合法答案下标），不足 4 题则不附带 */
+      const qs=(j.qs||[]).filter(function(q){
+        return q && q.stem && q.opts && q.opts.length===4 &&
+               q.opts.every(function(o){ return o && String(o).trim(); }) &&
+               typeof q.ans==='number' && q.ans>=0 && q.ans<4;
+      }).slice(0,5).map(function(q){
+        return {kind:String(q.kind||'阅读'), stem:String(q.stem).trim(),
+                opts:q.opts.map(function(o){ return String(o).trim(); }), ans:q.ans, why:String(q.why||'')};
+      });
+      return {titleEn:String(j.title||'AI Reading'), titleCn:String(j.titleCn||''),
+              paras:paras, words:words, qs:(qs.length>=4?qs:[]), src:'ai'};
+    };
+    let done=tryFinish(); if(done) return done;
+    /* 救援 1：仅 JSON 未闭合时才做截断续写——闭合 JSON 的续写合并是纯浪费（实测 446/606 字无效调用） */
+    if(canCont && !closed && (!j.title || paras.length<MINP_EFF || wc<WC_MIN)){
       const c=await aiContinueTruncated(sys, txt, paras);
-      if(c){ j=c.j; paras=c.paras; }
+      if(c){ j=c.j; paras=c.paras; wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
     }
-    var wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); });
-    /* ② 输出上限（模型单次 ~5000 字）：分段补齐后续自然段 */
-    if(wc<WC_MIN && canCont){
+    done=tryFinish(); if(done) return done;
+    /* 救援 2：段数不足 MINP → 分段补齐补段落（minL=800 让中转/智谱交真段落，POLL 已禁赛） */
+    if(j.title && paras.length<MINP && canCont){
+      const tailP=await aiGenTail(sys, paras, (MINP-paras.length)*90, SPEC.lvl);
+      if(tailP && tailP.length){ paras=paras.concat(tailP); wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
+    }
+    done=tryFinish(); if(done) return done;
+    /* 救援 3：词数不足 → 分段补齐补词（段数已过宽容线、只差词数时不重打整轮） */
+    if(canCont && wc<WC_MIN){
       const tail=await aiGenTail(sys, paras, WC_MIN-wc, SPEC.lvl);
       if(tail && tail.length){ paras=paras.concat(tail); wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
     }
-    if(wc<WC_MIN) continue;   /* 段数或字数不达标：重试一次，仍不足则返回 null 走本地引擎 */
-    const words=(j.words||[]).filter(function(w){ return w&&w.w; }).slice(0,14)
-      .map(function(w){ return {w:String(w.w), cn:String(w.cn||'')}; });
-    /* AI 命题的阅读理解题：校验结构（题干 + 4 选项 + 合法答案下标），不足 4 题则不附带 */
-    const qs=(j.qs||[]).filter(function(q){
-      return q && q.stem && q.opts && q.opts.length===4 &&
-             q.opts.every(function(o){ return o && String(o).trim(); }) &&
-             typeof q.ans==='number' && q.ans>=0 && q.ans<4;
-    }).slice(0,5).map(function(q){
-      return {kind:String(q.kind||'阅读'), stem:String(q.stem).trim(),
-              opts:q.opts.map(function(o){ return String(o).trim(); }), ans:q.ans, why:String(q.why||'')};
-    });
-    return {titleEn:String(j.title||'AI Reading'), titleCn:String(j.titleCn||''),
-            paras:paras, words:words, qs:(qs.length>=4?qs:[]), src:'ai'};
+    done=tryFinish(); if(done) return done;
   }
   return null;
 }
