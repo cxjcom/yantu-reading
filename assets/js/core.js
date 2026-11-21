@@ -1147,20 +1147,57 @@ function aiCfgFill(){
   document.getElementById('aiModel').value=c.model||'';
   document.getElementById('aiKey').value=c.key||'';
 }
+/* ---------- 模型↔API 自动绑定（用户要求）：模型家族与接口地址不一致时，
+   保存/测试连通自动套用已存方案里对应服务商的地址+Key；没有对应方案则拒绝保存（防废配置） ---------- */
+function aiFamName(f){ return ({glm:'智谱', deepseek:'DeepSeek', kimi:'Kimi', doubao:'豆包', qwen:'Qwen系'})[f]||f; }
+function aiModelFamily(m){
+  m=String(m||'').toLowerCase();
+  if(m.indexOf('glm')===0) return 'glm';
+  if(m.indexOf('deepseek')===0) return 'deepseek';
+  if(m.indexOf('kimi')===0||m.indexOf('moonshot')===0) return 'kimi';
+  if(m.indexOf('doubao')===0) return 'doubao';
+  if(m.indexOf('qwen')===0) return 'qwen';
+  return '';
+}
+function aiUrlFamily(u){
+  u=String(u||'').toLowerCase();
+  if(u.indexOf('bigmodel')>=0) return 'glm';
+  if(u.indexOf('deepseek')>=0) return 'deepseek';
+  if(u.indexOf('moonshot')>=0) return 'kimi';
+  if(u.indexOf('volcengine')>=0||u.indexOf('/ark')>=0) return 'doubao';
+  if(u.indexOf('siliconflow')>=0) return 'qwen';
+  return '';
+}
+/* 返回 {url,model,key,note} 或 null（拒绝保存，错误信息已写入 m） */
+function aiProviderBind(url, model, key, m){
+  const fam=aiModelFamily(model), ufam=aiUrlFamily(url);
+  if(!fam || !ufam || fam===ufam) return {url:url, model:model, key:key, note:''};
+  const cand=providerList().find(function(p){ return aiUrlFamily(p.url)===fam; });
+  if(cand){
+    const note='模型 '+model+' 属于「'+aiFamName(fam)+'」，已自动套用「'+(cand.name||'方案')+'」的地址与 Key';
+    if(m){ m.textContent='✅ '+note; m.style.color='#2e9e5b'; }
+    return {url:cand.url, model:model, key:cand.key, note:note};
+  }
+  if(m){ m.textContent='❌ 模型「'+model+'」需要「'+aiFamName(fam)+'」的 API（当前地址是「'+aiFamName(ufam)+'」的），且没有该家族的已存方案——请填「'+aiFamName(fam)+'」的接口地址与 Key 后再保存'; m.style.color='#d9534f'; }
+  return null;
+}
 $('#aiSave').onclick=function(){
-  aiCfgSave({url:document.getElementById('aiUrl').value.trim(),
-             model:document.getElementById('aiModel').value.trim(),
-             key:document.getElementById('aiKey').value.trim(),
-             ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b')});
+  const m=document.getElementById('aiCfgMsg');
+  const b=aiProviderBind(document.getElementById('aiUrl').value.trim(), document.getElementById('aiModel').value.trim(), document.getElementById('aiKey').value.trim(), m);
+  if(!b) return;
+  aiCfgSave({url:b.url, model:b.model, key:b.key, ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b')});
+  document.getElementById('aiUrl').value=b.url;
+  document.getElementById('aiKey').value=b.key;
   spkOllamaOK=null;
-  const m=document.getElementById('aiCfgMsg'); m.textContent='✅ 已保存'; m.style.color='#2e9e5b';
+  m.textContent='✅ 已保存'+(b.note?('（'+b.note+'）'):''); m.style.color='#2e9e5b';
 };
 $('#aiTest').onclick=async function(){
   const m=document.getElementById('aiCfgMsg');
-  aiCfgSave({url:document.getElementById('aiUrl').value.trim(),
-             model:document.getElementById('aiModel').value.trim(),
-             key:document.getElementById('aiKey').value.trim(),
-             ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b')});
+  const b=aiProviderBind(document.getElementById('aiUrl').value.trim(), document.getElementById('aiModel').value.trim(), document.getElementById('aiKey').value.trim(), m);
+  if(!b) return;
+  aiCfgSave({url:b.url, model:b.model, key:b.key, ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b')});
+  document.getElementById('aiUrl').value=b.url;
+  document.getElementById('aiKey').value=b.key;
   spkOllamaOK=null; m.textContent='测试中…'; m.style.color='var(--muted)';
   const t=await aiChat('测试：请回复 OK','只回复两个字母：OK',60000,1);
   if(t){ m.textContent='✅ 连通成功：'+t.trim().slice(0,30); m.style.color='#2e9e5b'; }
@@ -1208,7 +1245,11 @@ $('#aiModelBtn').onclick=async function(){
   }
 };
 $('#aiModelPick').onchange=function(){
-  if(this.value) document.getElementById('aiModel').value=this.value;
+  if(!this.value) return;
+  document.getElementById('aiModel').value=this.value;
+  const m=document.getElementById('aiCfgMsg');
+  const fam=aiModelFamily(this.value), ufam=aiUrlFamily(document.getElementById('aiUrl').value);
+  if(m && fam && ufam && fam!==ufam){ m.textContent='ℹ️ 选中的「'+this.value+'」属于「'+aiFamName(fam)+'」——点「保存」会自动套用其方案的地址与 Key'; m.style.color='#2e9e5b'; }
 };
 try{ aiModelistRestore(); }catch(e){}
 /* ---------- 方案快切：多服务商配置档——点方案名一键切换整套 API（地址+模型+Key 联动） ---------- */
