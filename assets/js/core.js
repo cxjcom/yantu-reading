@@ -1499,6 +1499,27 @@ async function aiContinueTruncated(sys, txt, paras){
   if(paras2.length < paras.length) return null;
   return {j:j2, paras:paras2};
 }
+/* 长文分段补齐：免费模型单次输出 ~5000 字上限，540+ 词一次写不完——
+   把已写段落开头作为上下文，单独请求"后续自然段"（独立 JSON），
+   拼接段落数组后由调用方重新校验总词数 */
+async function aiGenTail(sys, paras, needWords, lvl){
+  const ctx=paras.map(function(pa){ return pa.map(function(s){ return s.en; }).join(' '); }).join('\n').slice(0,1100);
+  const moreN=Math.max(3, Math.ceil(needWords/55)+2);
+  const usr='下面是一篇考研英语阅读文章《'+(curPassage&&curPassage.titleEn||'')+'》已写好的部分开头：\n'+ctx+
+    '\n\n请继续写这篇文章的后半部分：再写 '+moreN+' 个自然段（每段 4-6 句，英文每句 15-30 词并配准确中文翻译），'+
+    '衔接前文主题与论证，不要重复已有内容。'+(lvl||'')+
+    '\n输出严格 JSON 对象：{"paras":[{"sents":[{"en":"英文句","cn":"中文句"}]}]}，禁止解释、禁止 markdown 标记。';
+  const txt=await aiChat(sys,usr,170000,50,{temp:0.55});
+  if(!txt) return null;
+  const j=extractJSON(txt);
+  if(!j || !j.paras) return null;
+  const t=(j.paras||[]).map(function(p){
+    return (p.sents||[]).filter(function(s){ return s&&s.en; }).map(function(s){
+      return {en:String(s.en).trim(), cn:String(s.cn||'').trim(), g:''};
+    });
+  }).filter(function(a){ return a.length>=3 && a.every(function(s){ return s.en.length>=25 && s.cn; }); });
+  return t.length ? t : null;
+}
 function aiDiagSummary(){
   try{
     const a=JSON.parse(localStorage.getItem('yt_aidiag')||'[]');
@@ -1767,8 +1788,15 @@ async function aiBuildReading(){
     /* 字数容差：差 40 词以内（或 88%）也算合格——真 AI 略短也远好于回落本地，避免白耗两次整生成 */
     const WC_MIN=Math.max(MINW-40, Math.round(MINW*0.88));
     if(wc<WC_MIN && canCont){
+      /* ① 真·截断（JSON 未闭合）：续写合并 */
       const c=await aiContinueTruncated(sys, txt, paras);
-      if(c){ j=c.j; paras=c.paras; wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
+      if(c){ j=c.j; paras=c.paras; }
+    }
+    var wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); });
+    /* ② 输出上限（模型单次 ~5000 字）：分段补齐后续自然段 */
+    if(wc<WC_MIN && canCont){
+      const tail=await aiGenTail(sys, paras, WC_MIN-wc, SPEC.lvl);
+      if(tail && tail.length){ paras=paras.concat(tail); wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
     }
     if(wc<WC_MIN) continue;   /* 段数或字数不达标：重试一次，仍不足则返回 null 走本地引擎 */
     const words=(j.words||[]).filter(function(w){ return w&&w.w; }).slice(0,14)
