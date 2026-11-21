@@ -1802,9 +1802,10 @@ async function aiBuildReading(){
   }[diffNow]||{minW:540, minP:8, pTxt:'8-10个自然段', wTxt:'540-620词', lvl:'考研英语（一）难度：学术词汇丰富，长难句'};
   const MINW=SPEC.minW, MINP=SPEC.minP;
   const sys='你是考研英语命题专家。只输出严格JSON对象，禁止输出任何解释、前言或markdown代码块标记。';
-  const base='随机生成一篇考研英语阅读理解文章并配套命题。要求：主题随机（科技/生态/社会/心理/经济/教育/医疗等），'+SPEC.pTxt+'，全文'+SPEC.wTxt+'（硬性标准：段数少于'+MINP+'段或总词数低于'+MINW+'词视为无效输出，将被判不合格；每段至少4-6句、每句15-30词，篇幅宁多勿少）；词汇与句式难度：'+SPEC.lvl+'（词汇难度必须与考试层级严格匹配，不得超纲或降级）；每段给准确中文翻译；另从文中选10-14个与该难度匹配的高频词给中文释义。'+
-    '命题要求：根据文章内容出5道阅读理解选择题，题型覆盖 1道主旨大意题 + 2道细节理解题 + 1道推理判断题 + 1道词义猜测题；题干和四个选项全部用英文，选项有干扰性但只有一个正确答案，答案必须能从文章中找到依据；每题给中文解析（说明定位依据与排除理由）。';
-  const tail='输出JSON格式：{"title":"英文标题","titleCn":"中文标题","paras":[{"sents":[{"en":"英文句","cn":"中文句"},中间若干句]}],"words":[{"w":"单词","cn":"词性. 释义"}],"qs":[{"kind":"题型（主旨大意/细节理解/推理判断/词义猜测/作者态度）","stem":"英文题干","opts":["四个英文选项"],"ans":0到3的正确选项下标,"why":"中文解析"} 共5题]}。'+
+  /* 2026-11-21 拆分提速：主调用只写文章本体（词表/5 题拆到 aiBuildReadingQs 小调用）——
+     主输出 ~7000→~5000 字，智谱单程近乎减半，且题目/词表不再牵动文章验收重试 */
+  const base='随机生成一篇考研英语阅读理解文章。要求：主题随机（科技/生态/社会/心理/经济/教育/医疗等），'+SPEC.pTxt+'，全文'+SPEC.wTxt+'（硬性标准：段数少于'+MINP+'段或总词数低于'+MINW+'词视为无效输出，将被判不合格；每段至少4-6句、每句15-30词，篇幅宁多勿少）；词汇与句式难度：'+SPEC.lvl+'（词汇难度必须与考试层级严格匹配，不得超纲或降级）；每段每句给准确中文翻译。';
+  const tail='输出JSON格式：{"title":"英文标题","titleCn":"中文标题","paras":[{"sents":[{"en":"英文句","cn":"中文句"},中间若干句]}]}。'+
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
     const usr=base+' 再次强调：必须至少'+MINP+'个自然段、全文'+(MINW+40)+'词以上，不许偷工减料，篇幅宁可偏长也不要只写几段。'+tail;
@@ -1822,19 +1823,8 @@ async function aiBuildReading(){
     const MINP_EFF=Math.max(4, MINP-3);
     const tryFinish=function(){
       if(!j.title || paras.length<MINP_EFF || wc<WC_MIN) return null;
-      const words=(j.words||[]).filter(function(w){ return w&&w.w; }).slice(0,14)
-        .map(function(w){ return {w:String(w.w), cn:String(w.cn||'')}; });
-      /* AI 命题的阅读理解题：校验结构（题干 + 4 选项 + 合法答案下标），不足 4 题则不附带 */
-      const qs=(j.qs||[]).filter(function(q){
-        return q && q.stem && q.opts && q.opts.length===4 &&
-               q.opts.every(function(o){ return o && String(o).trim(); }) &&
-               typeof q.ans==='number' && q.ans>=0 && q.ans<4;
-      }).slice(0,5).map(function(q){
-        return {kind:String(q.kind||'阅读'), stem:String(q.stem).trim(),
-                opts:q.opts.map(function(o){ return String(o).trim(); }), ans:q.ans, why:String(q.why||'')};
-      });
       return {titleEn:String(j.title||'AI Reading'), titleCn:String(j.titleCn||''),
-              paras:paras, words:words, qs:(qs.length>=4?qs:[]), src:'ai'};
+              paras:paras, words:[], qs:[], src:'ai'};
     };
     let done=tryFinish(); if(done) return done;
     /* 救援 1：仅 JSON 未闭合时才做截断续写——闭合 JSON 的续写合并是纯浪费（实测 446/606 字无效调用） */
@@ -1851,9 +1841,38 @@ async function aiBuildReading(){
       const tail=await aiGenTail(sys, paras, needW, SPEC.lvl);
       if(tail && tail.length){ paras=paras.concat(tail); wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
     }
-    done=tryFinish(); if(done) return done;
+    done=tryFinish(); if(!done) continue;   /* 文章本体两轮都没达标 → 走本地引擎 */
+    /* 第二段调用：配套命题/词表（独立小调用，失败仅降级为无题文章，不牵动验收） */
+    const artText=done.paras.map(function(pa){ return pa.map(function(s){ return s.en; }).join(' '); }).join('\n').slice(0,6000);
+    const qw=await aiBuildReadingQs(artText, ({cet4:'四级',cet6:'六级',std:'考研',plus:'考研'}[diffNow]||'考研'));
+    if(qw){ done.words=qw.words; done.qs=qw.qs; }
+    return done;
   }
   return null;
+}
+/* 文章配套命题/词表（第二段小调用）：输入文章英文全文，只输出词表+5 题（~2500 字 ~40s） */
+async function aiBuildReadingQs(enText, lvl){
+  const sys='你是考研英语命题专家。只输出严格JSON对象，禁止输出任何解释、前言或markdown代码块标记。';
+  const usr='下面是一篇'+(lvl||'考研')+'英语阅读文章全文：\n'+enText+
+    '\n\n请基于这篇文章完成两项任务：①从文中选10-14个'+(lvl||'考研')+'高频词给中文释义；②命制5道阅读理解选择题（题型覆盖 1道主旨大意题 + 2道细节理解题 + 1道推理判断题 + 1道词义猜测题）：题干和四个选项全部用英文，选项有干扰性但只有一个正确答案，答案必须能从文章中找到依据；每题给中文解析（说明定位依据与排除理由）。'+
+    '\n输出严格 JSON 对象：{"words":[{"w":"单词","cn":"词性. 释义"}],"qs":[{"kind":"题型（主旨大意/细节理解/推理判断/词义猜测/作者态度）","stem":"英文题干","opts":["四个英文选项"],"ans":0到3的正确选项下标,"why":"中文解析"} 共5题]}，禁止解释、禁止 markdown 标记。';
+  try{
+    const txt=await aiChat(sys,usr,90000,400,{temp:0.4,noPOLL:true});
+    const j=txt?extractJSON(txt):null;
+    if(!j) return null;
+    const words=(j.words||[]).filter(function(w){ return w&&w.w; }).slice(0,14)
+      .map(function(w){ return {w:String(w.w), cn:String(w.cn||'')}; });
+    /* AI 命题的阅读理解题：校验结构（题干 + 4 选项 + 合法答案下标），不足 4 题则不附带 */
+    const qs=(j.qs||[]).filter(function(q){
+      return q && q.stem && q.opts && q.opts.length===4 &&
+             q.opts.every(function(o){ return o && String(o).trim(); }) &&
+             typeof q.ans==='number' && q.ans>=0 && q.ans<4;
+    }).slice(0,5).map(function(q){
+      return {kind:String(q.kind||'阅读'), stem:String(q.stem).trim(),
+              opts:q.opts.map(function(o){ return String(o).trim(); }), ans:q.ans, why:String(q.why||'')};
+    });
+    return {words:words, qs:(qs.length>=4?qs:[])};
+  }catch(e){ return null; }
 }
 async function aiBuildCloze(){
   const avoid=aiHist('cloze');
