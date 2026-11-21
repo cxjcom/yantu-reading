@@ -1195,6 +1195,51 @@ $('#aiTest').onclick=async function(){
   if(t){ m.textContent='✅ 连通成功：'+t.trim().slice(0,30); m.style.color='#2e9e5b'; }
   else{ m.textContent='❌ 未连通（检查地址/Key/网络）；不影响本地生成'; m.style.color='#d9534f'; }
 };
+/* 模型列表：从主 Key 接口地址推导 /models 端点拉取模型清单（OpenAI 兼容），
+   选中即回填模型名并随「保存」持久化；列表本身存 yt_modelist，重开页面自动恢复。
+   部分服务商（如智谱）不允许浏览器直连列表接口——降级为手填指引 */
+function aiModelsRoot(url){ return String(url||'').trim().replace(/\/+$/,'').replace(/\/chat\/completions$/i,''); }
+function aiModelPickFill(ids){
+  const pick=document.getElementById('aiModelPick');
+  if(!pick) return;
+  pick.innerHTML=ids.map(function(id){ return '<option value="'+String(id).replace(/"/g,'&quot;')+'">'+String(id).replace(/</g,'&lt;')+'</option>'; }).join('');
+  pick.style.display='block';
+}
+function aiModelistRestore(){
+  try{
+    const saved=JSON.parse(localStorage.getItem('yt_modelist')||'null');
+    if(!saved||!Array.isArray(saved.ids)||!saved.ids.length) return;
+    if(aiModelsRoot(document.getElementById('aiUrl').value)!==saved.root) return;
+    aiModelPickFill(saved.ids);
+  }catch(e){}
+}
+$('#aiModelBtn').onclick=async function(){
+  const m=document.getElementById('aiCfgMsg');
+  const url=document.getElementById('aiUrl').value.trim();
+  const key=document.getElementById('aiKey').value.trim();
+  if(!url){ m.textContent='先填 API 地址再拉取模型列表'; m.style.color='#d9534f'; return; }
+  m.textContent='正在拉取模型列表…'; m.style.color='var(--muted)';
+  try{
+    const r=await fetch(aiModelsRoot(url)+'/models',{headers:(key?{Authorization:'Bearer '+key}:{})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j=await r.json();
+    const arr=(j&&j.data)||(j&&j.models)||[];
+    const ids=arr.map(function(x){ return (x&&(x.id||x.name||x.model))||''; }).filter(Boolean);
+    if(!ids.length){ m.textContent='拉取成功但未解析到模型（响应非标准结构），请手填模型名'; m.style.color='#d9534f'; return; }
+    ids.sort();
+    aiModelPickFill(ids);
+    try{ localStorage.setItem('yt_modelist', JSON.stringify({root:aiModelsRoot(url), ids:ids.slice(0,60), t:Date.now()})); }catch(e){}
+    m.textContent='✅ 拉到 '+ids.length+' 个模型——下拉选中后会回填模型名，点「保存」即可用于生成（个别服务商不允许浏览器拉列表，那请手填）';
+    m.style.color='#2e9e5b';
+  }catch(e){
+    m.textContent='❌ 模型列表拉取失败（'+String(e&&e.message||e).slice(0,40)+'）——该服务商可能不允许浏览器直连列表接口，请手填模型名（如 deepseek-chat）';
+    m.style.color='#d9534f';
+  }
+};
+$('#aiModelPick').onchange=function(){
+  if(this.value) document.getElementById('aiModel').value=this.value;
+};
+try{ aiModelistRestore(); }catch(e){}
 /* 端点自检：在当前浏览器逐个探测各通道，被插件/安全软件拦截一目了然 */
 $('#epTestBtn').onclick=async function(){
   const box=document.getElementById('epTestOut');
