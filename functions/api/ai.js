@@ -30,49 +30,8 @@ export async function onRequestPost(context) {
     return { role: String(m.role || 'user').slice(0, 16), content: String(m.content || '').slice(0, 24000) };
   });
 
-  /* 诊断信息：各通道失败原因，最终 502 时随 body 返回（须在 ⓪ 之前声明，失败回落都要写它） */
+  /* 诊断信息：各通道失败原因，最终 502 时随 body 返回 */
   let diag = {};
-
-  /* ⓪ 智谱 GLM-4-Flash（客户端传入 zhipuKey 时；国内稳定，服务端调无 CORS）。
-     429/5xx 静默重试一次：免费档并发限制，文章级大请求易撞限，3s 后重试多半可过 */
-  if (body.zhipuKey) {
-    for (let zpTry = 1; zpTry <= 2; zpTry++) {
-      try {
-        const r = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + String(body.zhipuKey).slice(0, 200)
-          },
-          body: JSON.stringify({
-            model: 'glm-4-flash',
-            messages: msgs,
-            temperature: body.temperature != null ? body.temperature : 0.6,
-            stream: false
-          })
-        });
-        if (r.ok) {
-          const j = await r.json().catch(function () { return null; });
-          const t = j && j.choices && j.choices[0] && j.choices[0].message ? j.choices[0].message.content : null;
-          if (t && t.trim().length > 2) {
-            return json({ choices: [{ message: { role: 'assistant', content: String(t) } }] });
-          }
-          diag.zp = 'HTTP ' + r.status + ' 空内容';
-          break;
-        }
-        if (zpTry < 2 && (r.status === 429 || r.status >= 500)) {
-          diag.zp = 'HTTP ' + r.status + '，3s后重试';
-          await new Promise(function (res) { setTimeout(res, 3000); });
-          continue;
-        }
-        diag.zp = 'HTTP ' + r.status;
-        break;
-      } catch (e) {
-        diag.zp = 'ERR:' + String(e && e.message || e).slice(0, 50);
-        break;
-      }
-    }
-  }
 
   /* ① WB 云端多模型顺序回退（SSE 聚合，长度达标判断） */
   try {

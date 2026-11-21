@@ -1146,50 +1146,21 @@ function aiCfgFill(){
   document.getElementById('aiUrl').value=c.url||'';
   document.getElementById('aiModel').value=c.model||'';
   document.getElementById('aiKey').value=c.key||'';
-  document.getElementById('zhipuKey').value=c.zhipuKey||'';
-  document.getElementById('siliconKey').value=c.siliconKey||'';
 }
 $('#aiSave').onclick=function(){
   aiCfgSave({url:document.getElementById('aiUrl').value.trim(),
              model:document.getElementById('aiModel').value.trim(),
              key:document.getElementById('aiKey').value.trim(),
-             ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b'),
-             zhipuKey:(aiCfg().zhipuKey||''),
-             siliconKey:(aiCfg().siliconKey||'')});
+             ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b')});
   spkOllamaOK=null;
   const m=document.getElementById('aiCfgMsg'); m.textContent='✅ 已保存'; m.style.color='#2e9e5b';
-};
-$('#freeKeysSave').onclick=function(){
-  const zk=document.getElementById('zhipuKey').value.trim();
-  const sk=document.getElementById('siliconKey').value.trim();
-  const m=document.getElementById('freeKeysMsg');
-  /* 槽位防呆：多通道只收智谱/硅基流动 Key——其他家（如 DeepSeek 的 sk- 开头格式）
-     填进来会被送到对应域名做无效鉴权，整链路退化（2026-11-21 实测用户踩坑） */
-  const isDS=function(k){ return /^sk-[0-9a-f]{16,}$/i.test(k); };
-  if(isDS(zk)||isDS(sk)){
-    m.textContent='❌ 检测到 DeepSeek 格式的 Key（sk- 开头）——多通道只收智谱/硅基流动的 Key。DeepSeek 请填上方「主 Key」三格：API 地址 https://api.deepseek.com/chat/completions + 模型名 deepseek-chat + Key，保存后点「测试连通」';
-    m.style.color='#d9534f';
-    return;
-  }
-  aiCfgSave({url:(aiCfg().url||''),
-             model:(aiCfg().model||''),
-             key:(aiCfg().key||''),
-             ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b'),
-             zhipuKey:zk, siliconKey:sk});
-  const parts=[];
-  if(zk) parts.push('智谱 ✅');
-  if(sk) parts.push('硅基流动 ✅');
-  m.textContent = (zk||sk) ? ('✅ 已保存并启用：'+parts.join(' + ')+'（自动加入 AI 竞速）') : '已清空（两通道停用）';
-  m.style.color='#2e9e5b';
 };
 $('#aiTest').onclick=async function(){
   const m=document.getElementById('aiCfgMsg');
   aiCfgSave({url:document.getElementById('aiUrl').value.trim(),
              model:document.getElementById('aiModel').value.trim(),
              key:document.getElementById('aiKey').value.trim(),
-             ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b'),
-             zhipuKey:(aiCfg().zhipuKey||''),
-             siliconKey:(aiCfg().siliconKey||'')});
+             ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b')});
   spkOllamaOK=null; m.textContent='测试中…'; m.style.color='var(--muted)';
   const t=await aiChat('测试：请回复 OK','只回复两个字母：OK',60000,1);
   if(t){ m.textContent='✅ 连通成功：'+t.trim().slice(0,30); m.style.color='#2e9e5b'; }
@@ -1270,37 +1241,17 @@ $('#epTestBtn').onclick=async function(){
     lines.push('❌ WorkBuddy 云端：不可达（'+String(e&&e.message||e).slice(0,40)+'）');
     lines.push('　└ 常见原因：<b>广告拦截/隐私插件拦了 workbuddy.host</b>，或该域名被安全软件拦截——把域名加入白名单或临时关掉插件再试');
   }
-  /* ①b 同源中转（Cloudflare 边缘代调，手机端首选通道；携智谱 Key 才等于用户真实生成路径） */
+  /* ①b 同源中转（Cloudflare 边缘代调，手机端首选通道） */
   try{
     const tR=Date.now();
-    const zk=(function(){ try{ return aiCfg().zhipuKey||''; }catch(e){ return ''; } })();
     const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'shell',messages:[{role:'user',content:'回复一个字：通'}],zhipuKey:zk})});
+      body:JSON.stringify({model:'shell',messages:[{role:'user',content:'回复一个字：通'}]})});
     const j=await r.json().catch(()=>null);
     const okr=r.ok && j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-    lines.push((okr?'✅':'⚠️')+' 同源中转：'+(okr?'可达，边缘代调成功'+(zk?'（携智谱 Key 服务端直调）':'（未配多通道智谱 Key）')+'（'+(Date.now()-tR)+'ms）':'HTTP '+r.status+'（'+(Date.now()-tR)+'ms）'));
+    lines.push((okr?'✅':'⚠️')+' 同源中转：'+(okr?'可达，边缘代调成功（'+(Date.now()-tR)+'ms）':'HTTP '+r.status+'（'+(Date.now()-tR)+'ms）'));
   }catch(e){
     lines.push('❌ 同源中转：不可达（'+String(e&&e.message||e).slice(0,40)+'）');
     lines.push('　└ 仅线上 pages.dev 可用；本地开发无此通道属正常');
-  }
-  /* ①b 多通道 Key：智谱 / 硅基流动（配置了才测） */
-  if(cfg.zhipuKey){
-    try{
-      const tz=Date.now();
-      const r=await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions',{method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.zhipuKey},
-        body:JSON.stringify({model:'glm-4-flash',messages:[{role:'user',content:'回复：通'}],max_tokens:5})});
-      lines.push((r.ok?'✅':'⚠️')+' 智谱（glm-4-flash）：HTTP '+r.status+'（'+(Date.now()-tz)+'ms）');
-    }catch(e){ lines.push('❌ 智谱：不可达（'+String(e&&e.message||e).slice(0,40)+'）'); }
-  }
-  if(cfg.siliconKey){
-    try{
-      const ts=Date.now();
-      const r=await fetch('https://api.siliconflow.cn/v1/chat/completions',{method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.siliconKey},
-        body:JSON.stringify({model:'Qwen/Qwen2.5-7B-Instruct',messages:[{role:'user',content:'回复：通'}],max_tokens:5})});
-      lines.push((r.ok?'✅':'⚠️')+' 硅基流动（Qwen2.5-7B）：HTTP '+r.status+'（'+(Date.now()-ts)+'ms）');
-    }catch(e){ lines.push('❌ 硅基流动：不可达（'+String(e&&e.message||e).slice(0,40)+'）'); }
   }
   /* ② Pollinations 兜底 */
   try{
@@ -1697,15 +1648,11 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
       const c = JSON.parse(localStorage.getItem('yt_wbmodels') || 'null');
       if (c && Array.isArray(c.ids) && c.ids.length && (Date.now() - c.t) < 86400000) relayModel = c.ids[0];
     } catch (e) {}
-    const relayExtra = cfg.zhipuKey ? { zhipuKey: cfg.zhipuKey } : null;
-    tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', relayModel, '', Math.min(total, 175000), relayExtra), {
+    tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', relayModel, '', Math.min(total, 175000)), {
       win: function(){ epHealthSet('RELAY_OK', Date.now()); },
       lose: function(){ epHealthSet('RELAY_FAIL', Date.now()); }
     }));
   }
-  /* ⓪b 多通道免费 Key：智谱 / 硅基流动（国内直连稳定，双 key 互为备份） */
-  if(cfg.zhipuKey) tasks.push(wrap('智谱', t0, fetchTask('智谱','https://open.bigmodel.cn/api/paas/v4/chat/completions','glm-4-flash',cfg.zhipuKey,Math.min(total,120000))));
-  if(cfg.siliconKey) tasks.push(wrap('硅基', t0, fetchTask('硅基','https://api.siliconflow.cn/v1/chat/completions','Qwen/Qwen2.5-7B-Instruct',cfg.siliconKey,Math.min(total,120000))));
   /* ① 自定义端点：用户付费配置，永远参赛 */
   if(cfg.url) tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000))));
   /* ② WB 云端：模型 id 优先用 localStorage 缓存（24h）——列表请求失败/超时不再把 WB 判死；
