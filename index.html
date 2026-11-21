@@ -487,6 +487,11 @@
           </div>
           <div id="aiCfgMsg"></div>
           <div class="cfgNote">📌 指定模型后（接口地址已填）：生成只走该模型，不再竞速其他通道；模型不可用时自动回落本地引擎</div>
+          <div class="cfgNote" style="margin-top:6px;">🗄 <b>方案快切</b>：点「💾 存为方案」把当前整套 API（地址+模型+Key）存为方案，之后点方案名一键整套切换，不用来回改三格</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px;">
+            <div id="providerChips" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+            <button id="providerSave" style="margin-top:0;">💾 存为方案</button>
+          </div>
           <div id="epTestOut" class="cfgNote" style="display:none;text-align:left;line-height:1.9;"></div>
         </details>
 
@@ -845,7 +850,7 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=100"></script>
+<script src="assets/js/core.js?v=101"></script>
 <script src="assets/js/book.js?v=78"></script>
 <script src="assets/js/motion.js?v=27"></script>
 <script>

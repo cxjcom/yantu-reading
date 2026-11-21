@@ -1211,6 +1211,56 @@ $('#aiModelPick').onchange=function(){
   if(this.value) document.getElementById('aiModel').value=this.value;
 };
 try{ aiModelistRestore(); }catch(e){}
+/* ---------- 方案快切：多服务商配置档——点方案名一键切换整套 API（地址+模型+Key 联动） ---------- */
+function providerLabel(url){
+  const u=String(url||'');
+  if(u.indexOf('deepseek')>=0) return 'DeepSeek';
+  if(u.indexOf('bigmodel')>=0) return '智谱';
+  if(u.indexOf('siliconflow')>=0) return '硅基流动';
+  if(u.indexOf('moonshot')>=0) return 'Kimi';
+  if(u.indexOf('volcengine')>=0||u.indexOf('/ark')>=0) return '豆包';
+  if(u.indexOf('localhost')>=0||u.indexOf('127.0.0.1')>=0) return 'Ollama';
+  if(u.indexOf('openrouter')>=0) return 'OpenRouter';
+  if(u.indexOf('pollinations')>=0) return 'Pollinations';
+  try{ return (new URL(u)).hostname.replace(/^api\d*\./,''); }catch(e){ return '自定义'; }
+}
+function providerList(){ try{ const a=JSON.parse(localStorage.getItem('yt_providers')||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function providerSaveList(a){ try{ localStorage.setItem('yt_providers', JSON.stringify(a.slice(0,12))); }catch(e){} }
+function renderProviderChips(){
+  const box=document.getElementById('providerChips'); if(!box) return;
+  const list=providerList(); const cur=aiCfg().url||'';
+  box.innerHTML=list.map(function(p,i){
+    const st=(p.url===cur)?'border-color:#2e9e5b;color:#2e9e5b;':'';
+    return '<button data-pi="'+i+'" style="margin-top:0;padding:4px 10px;font-size:12px;border:1px solid #c9b9a0;border-radius:8px;background:#fffdf8;cursor:pointer;'+st+'">'+String(p.name||'方案').replace(/</g,'&lt;')+'</button>';
+  }).join('') || '<span style="font-size:12px;color:var(--muted,#888);">还没有方案——填好上方三格后点「💾 存为方案」</span>';
+  box.querySelectorAll('button[data-pi]').forEach(function(b){
+    b.onclick=function(){ window.ytProvPick(parseInt(b.getAttribute('data-pi'),10)); };
+  });
+}
+window.ytProvPick=function(i){
+  const p=providerList()[i]; if(!p) return;
+  document.getElementById('aiUrl').value=p.url||'';
+  document.getElementById('aiModel').value=p.model||'';
+  document.getElementById('aiKey').value=p.key||'';
+  aiCfgSave({url:p.url||'', model:p.model||'', key:p.key||'', ollamaModel:(aiCfg().ollamaModel||'qwen2.5:7b')});
+  aiModelistRestore();
+  renderProviderChips();
+  const m=document.getElementById('aiCfgMsg');
+  if(m){ m.textContent='✅ 已切换到「'+(p.name||'方案')+'」并保存生效'; m.style.color='#2e9e5b'; }
+};
+$('#providerSave').onclick=function(){
+  const url=document.getElementById('aiUrl').value.trim();
+  const m=document.getElementById('aiCfgMsg');
+  if(!url){ if(m){ m.textContent='先填好 API 地址再存为方案'; m.style.color='#d9534f'; } return; }
+  const list=providerList();
+  const rec={name:providerLabel(url), url:url, model:document.getElementById('aiModel').value.trim(), key:document.getElementById('aiKey').value.trim(), t:Date.now()};
+  const ex=list.findIndex(function(p){ return p.url===url; });
+  if(ex>=0) list[ex]=rec; else list.push(rec);
+  providerSaveList(list);
+  renderProviderChips();
+  if(m){ m.textContent='✅ 已存为方案「'+rec.name+'」（同地址重复保存会覆盖更新）——点方案名随时整套切换'; m.style.color='#2e9e5b'; }
+};
+renderProviderChips();
 /* 端点自检：在当前浏览器逐个探测各通道，被插件/安全软件拦截一目了然 */
 $('#epTestBtn').onclick=async function(){
   const box=document.getElementById('epTestOut');
