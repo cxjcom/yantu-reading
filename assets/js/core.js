@@ -1799,6 +1799,13 @@ async function aiBuildReading(){
       const c=await aiContinueTruncated(sys, txt, paras);
       if(c){ j=c.j; paras=c.paras; }
     }
+    /* 段数不足（免费模型 5000 字符单发常只有 5-7 段，缺 1-3 段）：标题有效时用分段补齐补段落
+       （2026-11-21 实测：此前段数不足直接进下一轮重试，而 POLL 重试同样写不满 → 永远到不了分段补齐，
+        minL=800 的补齐调用会让中转/智谱交出真段落） */
+    if(j.title && paras.length<MINP && canCont){
+      const tailP=await aiGenTail(sys, paras, (MINP-paras.length)*90, SPEC.lvl);
+      if(tailP && tailP.length){ paras=paras.concat(tailP); }
+    }
     if(!j.title || paras.length<MINP) continue;
     var wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); });
     /* 字数容差：差 40 词以内（或 88%）也算合格——真 AI 略短也远好于回落本地，避免白耗两次整生成 */
