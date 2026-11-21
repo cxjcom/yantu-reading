@@ -1226,12 +1226,19 @@ function providerLabel(url){
 }
 function providerList(){ try{ const a=JSON.parse(localStorage.getItem('yt_providers')||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
 function providerSaveList(a){ try{ localStorage.setItem('yt_providers', JSON.stringify(a.slice(0,12))); }catch(e){} }
+/* Key 指纹：sk-=DeepSeek/硅基系，id.secret=智谱系——方案按钮上亮出来，绑错一眼可见 */
+function keyFingerprint(k){
+  const s=String(k||'');
+  if(/^sk-/i.test(s)) return 'sk';
+  if(s.indexOf('.')>0 && s.length>40) return 'zp';
+  return '—';
+}
 function renderProviderChips(){
   const box=document.getElementById('providerChips'); if(!box) return;
   const list=providerList(); const cur=aiCfg().url||'';
   box.innerHTML=list.map(function(p,i){
     const st=(p.url===cur)?'border-color:#2e9e5b;color:#2e9e5b;':'';
-    return '<button data-pi="'+i+'" style="margin-top:0;padding:4px 10px;font-size:12px;border:1px solid #c9b9a0;border-radius:8px;background:#fffdf8;cursor:pointer;'+st+'">'+String(p.name||'方案').replace(/</g,'&lt;')+'</button>';
+    return '<button data-pi="'+i+'" style="margin-top:0;padding:4px 10px;font-size:12px;border:1px solid #c9b9a0;border-radius:8px;background:#fffdf8;cursor:pointer;'+st+'">'+String(p.name||'方案').replace(/</g,'&lt;')+'<span style="opacity:.65;">·'+keyFingerprint(p.key)+'</span></button>';
   }).join('') || '<span style="font-size:12px;color:var(--muted,#888);">还没有方案——填好上方三格后点「💾 存为方案」</span>';
   box.querySelectorAll('button[data-pi]').forEach(function(b){
     b.onclick=function(){ window.ytProvPick(parseInt(b.getAttribute('data-pi'),10)); };
@@ -1246,19 +1253,26 @@ window.ytProvPick=function(i){
   aiModelistRestore();
   renderProviderChips();
   const m=document.getElementById('aiCfgMsg');
-  if(m){ m.textContent='✅ 已切换到「'+(p.name||'方案')+'」并保存生效'; m.style.color='#2e9e5b'; }
+  const bad=/bigmodel/i.test(p.url||'') && /^sk-/i.test(p.key||'');
+  if(m){ m.textContent= bad ? '⚠️ 已切到「'+(p.name||'方案')+'」，但该方案绑的 Key 是 DeepSeek 格式（sk-），与智谱接口不匹配——请填对智谱 Key 后重新「💾 存为方案」覆盖它' : '✅ 已切换到「'+(p.name||'方案')+'」并保存生效'; m.style.color= bad ? '#d9534f' : '#2e9e5b'; }
 };
 $('#providerSave').onclick=function(){
   const url=document.getElementById('aiUrl').value.trim();
+  const key=document.getElementById('aiKey').value.trim();
   const m=document.getElementById('aiCfgMsg');
   if(!url){ if(m){ m.textContent='先填好 API 地址再存为方案'; m.style.color='#d9534f'; } return; }
+  /* Key-域名匹配防呆：智谱接口配 sk- Key（DeepSeek 格式）= 保存即废——存之前拦下（2026-11-22 实测踩坑） */
+  if(/bigmodel/i.test(url) && /^sk-/i.test(key)){
+    if(m){ m.textContent='❌ Key 与接口不匹配：接口是智谱（bigmodel.cn），但 Key 是 sk- 开头（DeepSeek 格式）。智谱的 Key 是 id.secret 两段式——换成智谱 Key 再存，或切 DeepSeek 方案'; m.style.color='#d9534f'; }
+    return;
+  }
   const list=providerList();
-  const rec={name:providerLabel(url), url:url, model:document.getElementById('aiModel').value.trim(), key:document.getElementById('aiKey').value.trim(), t:Date.now()};
+  const rec={name:providerLabel(url), url:url, model:document.getElementById('aiModel').value.trim(), key:key, t:Date.now()};
   const ex=list.findIndex(function(p){ return p.url===url; });
   if(ex>=0) list[ex]=rec; else list.push(rec);
   providerSaveList(list);
   renderProviderChips();
-  if(m){ m.textContent='✅ 已存为方案「'+rec.name+'」（同地址重复保存会覆盖更新）——点方案名随时整套切换'; m.style.color='#2e9e5b'; }
+  if(m){ m.textContent='✅ 已存为方案「'+rec.name+'·'+keyFingerprint(key)+'」（同地址重复保存覆盖更新）——点方案名随时整套切换'; m.style.color='#2e9e5b'; }
 };
 renderProviderChips();
 /* 端点自检：在当前浏览器逐个探测各通道，被插件/安全软件拦截一目了然 */
