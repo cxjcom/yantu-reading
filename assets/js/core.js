@@ -1807,7 +1807,7 @@ async function aiBuildReading(){
   const tail='输出JSON格式：{"title":"英文标题","titleCn":"中文标题","paras":[{"sents":[{"en":"英文句","cn":"中文句"},中间若干句]}],"words":[{"w":"单词","cn":"词性. 释义"}],"qs":[{"kind":"题型（主旨大意/细节理解/推理判断/词义猜测/作者态度）","stem":"英文题干","opts":["四个英文选项"],"ans":0到3的正确选项下标,"why":"中文解析"} 共5题]}。'+
     (avoid.length?'本次主题与标题必须与已生成列表完全不同：'+avoid.join(' / ')+'。':'');
   for(let attempt=0; attempt<2; attempt++){
-    const usr=base+(attempt===1?' 再次强调：必须至少'+MINP+'个自然段、全文'+MINW+'词以上，不许偷工减料，篇幅宁可偏长也不要只写几段。':'')+tail;
+    const usr=base+' 再次强调：必须至少'+MINP+'个自然段、全文'+(MINW+40)+'词以上，不许偷工减料，篇幅宁可偏长也不要只写几段。'+tail;
     const txt=await aiChat(sys,usr,180000,80,{temp:0.55,noPOLL:true});
     if(!txt) continue;
     const j0=extractJSON(txt); if(!j0) continue;
@@ -1843,15 +1843,12 @@ async function aiBuildReading(){
       if(c){ j=c.j; paras=c.paras; wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
     }
     done=tryFinish(); if(done) return done;
-    /* 救援 2：段数不足 MINP → 分段补齐补段落（minL=800 让中转/智谱交真段落，POLL 已禁赛） */
-    if(j.title && paras.length<MINP && canCont){
-      const tailP=await aiGenTail(sys, paras, (MINP-paras.length)*90, SPEC.lvl);
-      if(tailP && tailP.length){ paras=paras.concat(tailP); wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
-    }
-    done=tryFinish(); if(done) return done;
-    /* 救援 3：词数不足 → 分段补齐补词（段数已过宽容线、只差词数时不重打整轮） */
-    if(canCont && wc<WC_MIN){
-      const tail=await aiGenTail(sys, paras, WC_MIN-wc, SPEC.lvl);
+    /* 救援 2：段数或词数不足 → 一次分段补齐同时补齐两者
+       （needWords 取 段差×90词 与 词差+60 的大者，moreN 随之放大——
+        2026-11-21 实测两缺时常同时缺，合并后省一次 60-110s 的补齐调用） */
+    if(j.title && canCont && (paras.length<MINP || wc<WC_MIN)){
+      const needW=Math.max((MINP-paras.length)*90, WC_MIN-wc+60, 80);
+      const tail=await aiGenTail(sys, paras, needW, SPEC.lvl);
       if(tail && tail.length){ paras=paras.concat(tail); wc=0; paras.forEach(function(pa){ pa.forEach(function(s){ wc+=s.en.trim().split(/\s+/).length; }); }); }
     }
     done=tryFinish(); if(done) return done;
