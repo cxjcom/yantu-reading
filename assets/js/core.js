@@ -1708,11 +1708,16 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     }));
   }
   /* ① 自定义端点：用户付费配置，永远参赛。
-     无 CORS 服务商（如智谱 bigmodel）浏览器直连必败——同参走中转服务端代调并发兜着，
-     两路谁通用谁赢（DeepSeek 有 CORS 时直连先赢，中转那路服务端调用作废仅损几厘） */
+     中转代调兄弟路只在两种情况下加入：a) 已知无 CORS 的服务商（bigmodel 等直连必败）；
+     b) 直连一小时内刚失败过（自愈式兜底）。有 CORS 的端点（如 DeepSeek）不白发服务端调用 */
   if(cfg.url){
-    tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000))));
-    if(typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){
+    tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000)), {
+      lose:function(){ epHealthSet('CUSTOM_FAIL', Date.now()); }
+    }));
+    const knownNoCors=/bigmodel|moonshot|volcengine|open\.bigmodel/i.test(cfg.url);
+    const h0=epHealth();
+    const recentFail=h0.CUSTOM_FAIL && (Date.now()-h0.CUSTOM_FAIL)<3600000;
+    if((knownNoCors || recentFail) && typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){
       tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', cfg.model||'', '', Math.min(total,175000), {ep:{url:cfg.url, model:cfg.model||'', key:cfg.key||''}}), {
         win:function(){ epHealthSet('RELAY_OK', Date.now()); },
         lose:function(){ epHealthSet('RELAY_FAIL', Date.now()); }
