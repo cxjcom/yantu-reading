@@ -56,7 +56,7 @@
       var warm=ctx.createBiquadFilter(); warm.type='lowpass'; warm.frequency.value=1500; warm.Q.value=0.4;
       musicBus=ctx.createGain(); musicBus.gain.value=0.42;
       musicBus.connect(warm); warm.connect(master); warm.connect(wet); wet.connect(wetGain); wetGain.connect(master);
-      sfxBus=ctx.createGain(); sfxBus.gain.value=0.55; sfxBus.connect(master);
+      sfxBus=ctx.createGain(); sfxBus.gain.value=0.42; sfxBus.connect(master);
       SECS.forEach(function(s){ sceneGains[s]=ctx.createGain(); sceneGains[s].gain.value=(s===curScene?1:0); sceneGains[s].connect(musicBus); });
       return true;
     }catch(e){ return false; }
@@ -198,17 +198,32 @@
   function sfx(kind){
     if(!sfxOn||!ctx||ctx.state!=='running') return;
     var t=ctx.currentTime;
-    if(kind==='tick'){ pluck(sfxBus,1150,t,0.09,0.16); }
-    else if(kind==='ok'){ pluck(sfxBus,659.25,t,0.28,0.20); pluck(sfxBus,880,t+0.09,0.34,0.22); }
-    else if(kind==='err'){
+    /* v1.11.4 音效全部降频柔化：告别高频"叮"，改低频木叩/气声 */
+    if(kind==='tick'){
+      /* 低频软木叩：520Hz 短音 + 极轻气声，不再是高频铃 */
       var o=ctx.createOscillator(), g=ctx.createGain(), f=ctx.createBiquadFilter();
-      o.type='square'; o.frequency.setValueAtTime(170,t); o.frequency.exponentialRampToValueAtTime(95,t+0.13);
-      f.type='lowpass'; f.frequency.value=600;
+      o.type='sine'; o.frequency.setValueAtTime(520,t); o.frequency.exponentialRampToValueAtTime(380,t+0.06);
+      f.type='lowpass'; f.frequency.value=900;
       o.connect(f); f.connect(g);
-      g.gain.setValueAtTime(0.12,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.16);
-      o.start(t); o.stop(t+0.18); g.connect(sfxBus);
+      g.gain.setValueAtTime(0.10,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.075);
+      o.start(t); o.stop(t+0.09); g.connect(sfxBus);
+      var nb=ctx.createBuffer(1,Math.floor(ctx.sampleRate*0.015),ctx.sampleRate), nd=nb.getChannelData(0);
+      for(var i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*(1-i/nd.length);
+      var ns=ctx.createBufferSource(); ns.buffer=nb;
+      var nf=ctx.createBiquadFilter(); nf.type='lowpass'; nf.frequency.value=1200;
+      var ng=ctx.createGain(); ng.gain.value=0.03;
+      ns.connect(nf); nf.connect(ng); ng.connect(sfxBus); ns.start(t);
     }
-    else if(kind==='blip'){ pluck(sfxBus,740,t,0.14,0.15); }
+    else if(kind==='ok'){ pluck(sfxBus,523.25,t,0.34,0.13); pluck(sfxBus,659.25,t+0.14,0.42,0.14); }
+    else if(kind==='err'){
+      var o2=ctx.createOscillator(), g2=ctx.createGain(), f2=ctx.createBiquadFilter();
+      o2.type='square'; o2.frequency.setValueAtTime(150,t); o2.frequency.exponentialRampToValueAtTime(85,t+0.15);
+      f2.type='lowpass'; f2.frequency.value=500;
+      o2.connect(f2); f2.connect(g2);
+      g2.gain.setValueAtTime(0.10,t); g2.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+      o2.start(t); o2.stop(t+0.20); g2.connect(sfxBus);
+    }
+    else if(kind==='blip'){ pluck(sfxBus,493.88,t,0.16,0.11); }
   }
 
   /* ---------- toast 联动（包装 core.js 的 showToast，按前缀配音） ---------- */
