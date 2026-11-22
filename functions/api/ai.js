@@ -55,7 +55,6 @@ export async function onRequestPost(context) {
   if (rateLimited(rlIp)) {
     return json({ error: { message: 'rate limited: try later' } }, 429);
   }
-  const aiBinding = (context.env && context.env.AI) ? context.env.AI : null;
   let body;
   try { body = await request.json(); } catch (e) { return json({ error: { message: 'bad json' } }, 400); }
   if (!body || !Array.isArray(body.messages) || !body.messages.length) {
@@ -117,25 +116,9 @@ export async function onRequestPost(context) {
     diag.wb = '竞速全空 (' + diag.wb + ')';
   } catch (e) { diag.wb = 'ERR:' + String(e && e.message || e).slice(0, 60); }
 
-  /* ② Cloudflare Workers AI（后台加 AI 绑定后自动启用；免 key，稳定）
-     双模型顺序回退：70b 质量优先，8b 快速兜底 */
-  if (aiBinding) {
-    const waModels = ['@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/meta/llama-3.1-8b-instruct'];
-    for (const m of waModels) {
-      try {
-        const r = await aiBinding.run(m, {
-          messages: msgs,
-          temperature: body.temperature != null ? body.temperature : 0.6
-        });
-        const t = r && (r.response || (r.choices && r.choices[0] && r.choices[0].message ? r.choices[0].message.content : null));
-        const L = (t || '').trim().length;
-        diag.wa = m.split('/').pop() + ':' + L + '字';
-        if (t && L > 2) {
-          return json({ choices: [{ message: { role: 'assistant', content: String(t) } }] });
-        }
-      } catch (e) { diag.wa = m.split('/').pop() + ':ERR:' + String(e && e.message || e).slice(0, 50); }
-    }
-  }
+  /* ② Cloudflare Workers AI 回退已移除（2026-11-22 v1.10.31，用户要求丢弃该线路）：
+     你的 CF 账号资源从此不可被任何第三方消费；无 Key 裸奔模式的兜底改由服务端 Pollinations 承担。
+     后台 Pages 项目里的 AI 绑定可留可删——已无代码引用 */
 
   /* ③ Pollinations 服务端回落 */
   try {
