@@ -33,7 +33,7 @@
     trans:   {base:293.66, step:1.30, dur:2.8, hi:0,  perc:0,   flute:0.14, drone:98.0},
     writing: {base:261.63, step:1.40, dur:3.2, hi:-5, perc:0,   flute:0.14, drone:65.4},
     mock:    {base:261.63, step:1.55, dur:3.4, hi:-5, perc:0,   flute:0.10, drone:65.4},
-    games:   {base:329.63, step:0.55, dur:1.4, hi:7,  perc:0.4, flute:0.05, drone:110.0},
+    games:   {base:329.63, step:0.55, dur:1.4, hi:7,  perc:0.2, flute:0.05, drone:110.0},
     profile: {base:246.94, step:1.70, dur:3.6, hi:-7, perc:0,   flute:0.12, drone:61.7}
   };
 
@@ -51,40 +51,32 @@
         for(var i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6);
       }
       wet.buffer=ir;
-      var wetGain=ctx.createGain(); wetGain.gain.value=0.28;
+      var wetGain=ctx.createGain(); wetGain.gain.value=0.34;
+      /* 音乐总线过暖化低通（v1.11.3）：1500Hz 以上整体滚降——整条配乐无锐角 */
+      var warm=ctx.createBiquadFilter(); warm.type='lowpass'; warm.frequency.value=1500; warm.Q.value=0.4;
       musicBus=ctx.createGain(); musicBus.gain.value=0.42;
-      musicBus.connect(master); musicBus.connect(wet); wet.connect(wetGain); wetGain.connect(master);
+      musicBus.connect(warm); warm.connect(master); warm.connect(wet); wet.connect(wetGain); wetGain.connect(master);
       sfxBus=ctx.createGain(); sfxBus.gain.value=0.55; sfxBus.connect(master);
       SECS.forEach(function(s){ sceneGains[s]=ctx.createGain(); sceneGains[s].gain.value=(s===curScene?1:0); sceneGains[s].connect(musicBus); });
       return true;
     }catch(e){ return false; }
   }
 
-  /* ---------- 音色（v1.11.2 轻质化：八音盒/风铃质感——纯 sine 高八度 +
-     微失谐空间泛音 + 非谐泛音微光，去低频浑浊；不再是钢琴/木琴体） ---------- */
+  /* ---------- 音色（v1.11.3 安眠曲化：中低音区纯 sine + 极轻八度谐音，
+     超慢起音像呼吸，无任何高频瞬态——温和到能当催眠背景） ---------- */
   function pluck(dest, freq, t, dur, vel){
-    var fq=freq*2;                                            /* 音区上移一个八度：轻盈 */
-    var o1=ctx.createOscillator(), o2=ctx.createOscillator(), o3=ctx.createOscillator(), g=ctx.createGain(), f=ctx.createBiquadFilter();
-    o1.type='sine'; o1.frequency.value=fq;                    /* 基音主体 */
-    o2.type='sine'; o2.frequency.value=fq*2.76;               /* 非谐泛音：风铃微光 */
-    o3.type='sine'; o3.frequency.value=fq*1.003;              /* 微失谐：空间感 */
-    f.type='highpass'; f.frequency.value=300;                 /* 去低频浑浊 */
-    var g2=ctx.createGain(); g2.gain.value=0.10; o2.connect(g2);
-    var g3=ctx.createGain(); g3.gain.value=0.09; o3.connect(g3);
-    o1.connect(f); g2.connect(f); g3.connect(f); f.connect(g);
+    var o1=ctx.createOscillator(), o2=ctx.createOscillator(), g=ctx.createGain();
+    o1.type='sine'; o1.frequency.value=freq;                  /* 基音：暖中低音 */
+    o2.type='sine'; o2.frequency.value=freq*2;                /* 八度谐音：极轻，只为轮廓 */
+    var g2=ctx.createGain(); g2.gain.value=0.07; o2.connect(g2);
+    o1.connect(g); g2.connect(g);
     g.gain.setValueAtTime(0.0001,t);
-    g.gain.exponentialRampToValueAtTime(vel,t+0.035);
+    g.gain.exponentialRampToValueAtTime(vel,t+0.10);          /* 0.1s 慢涌起音：像一口气 */
+    g.gain.exponentialRampToValueAtTime(vel*0.55,t+dur*0.45); /* 先缓落后轻驻：摇篮曲弧线 */
     g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
     o1.start(t); o1.stop(t+dur+0.05);
-    o2.start(t); o2.stop(t+Math.min(dur,0.9));
-    o3.start(t); o3.stop(t+dur+0.05);
+    o2.start(t); o2.stop(t+dur+0.05);
     g.connect(dest);
-    var nb=ctx.createBuffer(1,Math.floor(ctx.sampleRate*0.02),ctx.sampleRate), nd=nb.getChannelData(0);
-    for(var i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*(1-i/nd.length);
-    var ns=ctx.createBufferSource(); ns.buffer=nb;
-    var nf=ctx.createBiquadFilter(); nf.type='highpass'; nf.frequency.value=5000;
-    var ng=ctx.createGain(); ng.gain.value=vel*0.10;
-    ns.connect(nf); nf.connect(ng); ng.connect(dest); ns.start(t);
   }
   function flute(dest, freq, t, dur){
     var o=ctx.createOscillator(), g=ctx.createGain(), vib=ctx.createOscillator(), vg=ctx.createGain(), f=ctx.createBiquadFilter();
@@ -115,15 +107,20 @@
       }catch(e){}
     }
     try{
+      /* 根音 + 纯五度和声垫（v1.11.3 氛围感）：双振荡器 2.5s 缓涌，慢呼吸起伏 */
       var o=ctx.createOscillator(), g=ctx.createGain(), lfo=ctx.createOscillator(), lg=ctx.createGain();
+      var o5=ctx.createOscillator(), g5=ctx.createGain();
       o.type='sine'; o.frequency.value=freq;
-      lfo.type='sine'; lfo.frequency.value=0.07; lg.gain.value=0.013;
+      o5.type='sine'; o5.frequency.value=freq*1.5;
+      lfo.type='sine'; lfo.frequency.value=0.06; lg.gain.value=0.010;
       lfo.connect(lg); lg.connect(g.gain);
       g.gain.setValueAtTime(0.0001,t);
-      g.gain.exponentialRampToValueAtTime(0.022,t+1.5);
-      o.connect(g); g.connect(musicBus);
-      o.start(t); lfo.start(t);
-      droneNode={o:o,g:g,lfo:lfo};
+      g.gain.exponentialRampToValueAtTime(0.022,t+2.5);
+      g5.gain.setValueAtTime(0.0001,t);
+      g5.gain.exponentialRampToValueAtTime(0.011,t+2.5);
+      o.connect(g); o5.connect(g5); g.connect(musicBus); g5.connect(musicBus);
+      o.start(t); lfo.start(t); o5.start(t);
+      droneNode={o:o,g:g,lfo:lfo,o5:o5,g5:g5};
     }catch(e){ droneNode=null; }
   }
   function tickPerc(dest, t){
@@ -147,12 +144,12 @@
       else walkIdx+=(Math.random()<0.5?-1:1);
       if(walkIdx<0) walkIdx=2; if(walkIdx>9) walkIdx=7;
       var oct=Math.floor(walkIdx/P.length), deg=walkIdx%P.length;
-      var freq=cfg.base*Math.pow(2,(P[deg]+12*oct+cfg.hi)/12)*2;   /* 全局高八度：轻质感 */
-      while(freq>1760) freq/=2;                                     /* 防刺耳上限 */
-      pluck(bus,freq,t,cfg.dur,0.09+Math.random()*0.04);           /* 音量再降：轻盈点缀 */
+      var freq=cfg.base*Math.pow(2,(P[deg]+12*oct+cfg.hi)/12);     /* 回归中低音区（v1.11.3 去刺耳） */
+      while(freq>660) freq/=2;                                     /* 上限压到 660Hz：安眠曲音区 */
+      pluck(bus,freq,t,cfg.dur,0.07+Math.random()*0.03);           /* 音量再降：摇篮曲级 */
       if(Math.random()<cfg.flute) flute(bus,freq*2,t+0.05,cfg.dur*0.8);
       if(cfg.perc&&Math.random()<cfg.perc) tickPerc(bus,t+cfg.step*0.5);
-      nextNote=t+cfg.step*(0.85+Math.random()*0.35);
+      nextNote=t+cfg.step*1.3*(0.85+Math.random()*0.35);           /* 节奏再放慢 30%：安眠曲步幅 */
     }
   }
   function startMusic(){
@@ -172,7 +169,7 @@
         droneNode.g.gain.cancelScheduledValues(t);
         droneNode.g.gain.setValueAtTime(droneNode.g.gain.value,t);
         droneNode.g.gain.linearRampToValueAtTime(0.0001,t+0.8);
-        droneNode.o.stop(t+0.9); droneNode.lfo.stop(t+0.9);
+        droneNode.o.stop(t+0.9); droneNode.lfo.stop(t+0.9); droneNode.o5.stop(t+0.9);
       }catch(e){}
       droneNode=null;
     }
