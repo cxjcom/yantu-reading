@@ -1146,7 +1146,30 @@ function aiCfgFill(){
   document.getElementById('aiUrl').value=c.url||'';
   document.getElementById('aiModel').value=c.model||'';
   document.getElementById('aiKey').value=c.key||'';
+  const mt=document.getElementById('aiMaxTok');
+  if(mt){ try{ mt.value=localStorage.getItem('yt_maxtok')||''; }catch(e){} }
 }
+/* max_tokens 输出上限（2026-11-22 体检报告⑤）：留空=服务商默认——免费档默认偏小是输出截断主因之一。
+   合法区间 64-32768，超界忽略。独立存 yt_maxtok——不混入 yt_aicfg，避免各处 aiCfgSave 重建对象时把它覆盖丢 */
+function ytMaxTok(){
+  try{
+    const n=parseInt(localStorage.getItem('yt_maxtok')||'',10);
+    return (n>=64&&n<=32768)?n:0;
+  }catch(e){ return 0; }
+}
+(function(){
+  const el=document.getElementById('aiMaxTok');
+  if(!el) return;
+  el.addEventListener('change',function(){
+    const v=String(this.value).trim();
+    const n=parseInt(v,10);
+    try{
+      if(!v){ localStorage.removeItem('yt_maxtok'); showToast('max_tokens 已清空——用服务商默认'); }
+      else if(n>=64&&n<=32768){ localStorage.setItem('yt_maxtok',String(n)); showToast('max_tokens 已设为 '+n+'——下次生成生效'); }
+      else { localStorage.removeItem('yt_maxtok'); showToast('max_tokens 需在 64-32768 之间，已忽略'); }
+    }catch(e){}
+  });
+})();
 /* ---------- 模型↔API 自动绑定（用户要求）：模型家族与接口地址不一致时，
    保存/测试连通自动套用已存方案里对应服务商的地址+Key；没有对应方案则拒绝保存（防废配置） ---------- */
 function aiFamName(f){ return ({glm:'智谱', deepseek:'DeepSeek', kimi:'Kimi', doubao:'豆包', qwen:'Qwen系', siliconflow:'硅基流动', openrouter:'OpenRouter', hunyuan:'腾讯混元', qianfan:'百度千帆'})[f]||f; }
@@ -1759,6 +1782,7 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     const headers={'Content-Type':'application/json'};
     if(key) headers['Authorization']='Bearer '+key;
     const payload=Object.assign({model:model,messages:msgs,temperature:temp}, extra||{});
+    const mt=ytMaxTok(); if(mt) payload.max_tokens=mt;   /* 用户可配输出上限（留空不传=服务商默认） */
     return fetch(url,{method:'POST',signal:ctrl.signal,headers:headers,
       body:JSON.stringify(payload)})
       .then(function(res){ if(!res.ok) throw new Error('HTTP '+res.status); return res.json(); })
@@ -1800,7 +1824,7 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     const h0=epHealth();
     const recentFail=h0.CUSTOM_FAIL && (Date.now()-h0.CUSTOM_FAIL)<3600000;
     if((knownNoCors || recentFail) && typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){
-      tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', cfg.model||'', '', Math.min(total,175000), {ep:{url:cfg.url, model:cfg.model||'', key:cfg.key||''}}), {
+      tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', cfg.model||'', '', Math.min(total,175000), (function(){ const ep={url:cfg.url, model:cfg.model||'', key:cfg.key||''}; const mt=ytMaxTok(); if(mt) ep.maxTok=mt; return {ep:ep}; })()), {
         win:function(){ epHealthSet('RELAY_OK', Date.now()); },
         lose:function(){ epHealthSet('RELAY_FAIL', Date.now()); }
       }));
@@ -2122,8 +2146,46 @@ function showHome(){ stopTts(); showOnly('home'); updateMeBtn(); window.scrollTo
 function showProfile(){ stopTts(); showOnly('profile'); renderProfile(); window.scrollTo(0,0); }
 
 /* ---------- 收藏 ---------- */
+/* ---------- 存储瘦身（2026-11-22 体检修复）----------
+   此前收藏/历史用 Object.assign 整篇拷贝，把出题缓存(qs)等临时大件一起存进去，
+   单篇可达数 MB，几个月就撞爆 5MB 配额——配额一满，其余 save* 又静默吞错，
+   表现为背词进度/错题本「悄悄不保存」。现在：白名单字段 + 配额满自动淘汰最旧收藏 + 全部 save* 提示 */
+const PASSAGE_KEEP=['id','titleEn','titleCn','emoji','topicName','diff','wordCount','paras','source','extraWords'];
+function slimPassage(p){
+  const o={};
+  PASSAGE_KEEP.forEach(function(k){ if(p[k]!==undefined) o[k]=p[k]; });
+  return o;
+}
+function slimStoredOnce(){
+  try{
+    const raw=localStorage.getItem('yt_favs')||'[]';
+    const f=JSON.parse(raw);
+    const slim=JSON.stringify(f.map(slimPassage));
+    if(slim.length<raw.length) localStorage.setItem('yt_favs',slim);
+  }catch(e){}
+  try{
+    const raw=localStorage.getItem('yt_history')||'[]';
+    const h=JSON.parse(raw);
+    const slim=JSON.stringify(h.map(slimPassage));
+    if(slim.length<raw.length) localStorage.setItem('yt_history',slim);
+  }catch(e){}
+}
+const ytQuotaWarned={};
+function ytSetItem(k,v,msg){
+  try{ localStorage.setItem(k,v); }
+  catch(e){ if(msg&&!ytQuotaWarned[k]){ ytQuotaWarned[k]=1; showToast(msg); } }
+}
 function getFavs(){ try{ return JSON.parse(localStorage.getItem('yt_favs')||'[]'); }catch(e){ return []; } }
-function saveFavs(l){ try{ localStorage.setItem('yt_favs', JSON.stringify(l)); }catch(e){ showToast('⚠️ 保存失败：浏览器存储空间不足，收藏未更新'); } }
+function saveFavs(l){
+  try{ localStorage.setItem('yt_favs', JSON.stringify(l)); }
+  catch(e){
+    /* 配额不足：自动淘汰较早的 20% 收藏后重试一次（新收藏在数组尾部必保留），仍失败才提示 */
+    if(l.length>10){
+      try{ localStorage.setItem('yt_favs', JSON.stringify(l.slice(-Math.floor(l.length*0.8)))); showToast('存储空间不足：已自动清理部分较早的收藏'); return; }catch(e2){}
+    }
+    showToast('⚠️ 保存失败：浏览器存储空间不足，收藏未更新');
+  }
+}
 function updateFavBtn(){
   const on = !!(curPassage && curPassage.id && getFavs().some(f=>f.id===curPassage.id));
   const b=$('#favBtn');
@@ -2138,8 +2200,8 @@ $('#favBtn').onclick=()=>{
     favs.splice(i,1); saveFavs(favs);
     updateFavBtn(); updateMeBtn(); showToast('已取消收藏');
   }else{
-    if(favs.length>=200){ showToast('收藏已达上限 200 篇，请先在「我的主页」清理'); return; }
-    favs.push(Object.assign({}, curPassage, {savedAt:Date.now()}));
+    if(favs.length>=100){ showToast('收藏已达上限 100 篇，请先在「我的主页」清理'); return; }
+    favs.push(Object.assign(slimPassage(curPassage), {savedAt:Date.now()}));
     saveFavs(favs);
     updateFavBtn(); updateMeBtn(); showToast('已收藏 ⭐ 可在「我的主页」回看');
   }
@@ -2164,7 +2226,7 @@ function bumpStats(words){
   s.daily[today]=d0;
   const dayKeys=Object.keys(s.daily);
   if(dayKeys.length>400){ dayKeys.sort(); dayKeys.slice(0,dayKeys.length-400).forEach(function(k){ delete s.daily[k]; }); }
-  try{ localStorage.setItem('yt_stats', JSON.stringify(s)); }catch(e){}
+  ytSetItem('yt_stats', JSON.stringify(s), '⚠️ 存储空间不足：学习统计未更新');
 }
 function renderStreakChip(){
   const el=document.getElementById('streakChip'); if(!el) return;
@@ -2217,14 +2279,15 @@ function openFav(f){
 
 /* ---------- 浏览历史 ---------- */
 function getHistory(){ try{ return JSON.parse(localStorage.getItem('yt_history')||'[]'); }catch(e){ return []; } }
-function saveHistory(h){ try{ localStorage.setItem('yt_history', JSON.stringify(h)); }catch(e){} }
+function saveHistory(h){ ytSetItem('yt_history', JSON.stringify(h), '⚠️ 存储空间不足：浏览记录未更新'); }
 function recordHistory(p){
   if(!p || !p.id || !p.titleEn) return;
   let h = getHistory().filter(x=>x.id!==p.id);   // 同一篇只保留最新时间
-  h.unshift(Object.assign({}, p, {t:Date.now()}));
+  h.unshift(Object.assign(slimPassage(p), {t:Date.now()}));
   if(h.length>50) h=h.slice(0,50);
   saveHistory(h);
 }
+try{ slimStoredOnce(); }catch(e){}
 function removeHistory(id){
   saveHistory(getHistory().filter(x=>x.id!==id));
   renderProfile(); showToast('已删除该条记录');
@@ -2259,7 +2322,7 @@ $('#clearHist').onclick=clearHistory;
 
 /* ---------- 阅读测试 + 错题本 ---------- */
 function getWrongBook(){ try{ return JSON.parse(localStorage.getItem('yt_wrongbook')||'[]'); }catch(e){ return []; } }
-function saveWrongBook(w){ try{ localStorage.setItem('yt_wrongbook', JSON.stringify(w)); }catch(e){} }
+function saveWrongBook(w){ ytSetItem('yt_wrongbook', JSON.stringify(w), '⚠️ 存储空间不足：错题本未更新'); }
 function addWrong(q){
   let wb=getWrongBook().filter(x=>!(x.type===q.type && x.body===q.body));  // 同题去重
   wb.unshift({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),
@@ -2595,7 +2658,7 @@ function renderQuizDone(){
     const ok=(q.yourIdx===q.ans);
     const d=document.createElement('div'); d.className='qReviewItem';
     const head=document.createElement('div'); head.className='qRevHead';
-    head.innerHTML='<span class="wTag">'+q.type+'题</span><span class="qRevNo">第 '+(i+1)+' 题</span>'+
+    head.innerHTML='<span class="wTag">'+gmEsc(q.type)+'题</span><span class="qRevNo">第 '+(i+1)+' 题</span>'+
       '<span class="qRevRes '+(ok?'g':'r')+'">'+(ok?'✓ 答对':'✗ 答错')+'</span>';
     d.appendChild(head);
     const stem=document.createElement('p'); stem.className='qStem'; stem.textContent=q.prompt; d.appendChild(stem);
@@ -2884,7 +2947,7 @@ function renderAICloze(){
   c.options.forEach(function(o){
     const b=document.createElement('button');
     b.className='clzChip'+(o.used?' used':'')+(clzSel===o.w?' sel':'');
-    b.innerHTML='<b>'+o.letter+'</b>'+o.w;
+    b.innerHTML='<b>'+gmEsc(o.letter)+'</b>'+gmEsc(o.w);
     b.onclick=function(){ aiChipClick(o); };
     bk.appendChild(b);
   });
@@ -2897,7 +2960,7 @@ function aiChipClick(o){
 }
 function showMeaningAI(o){
   const mz=document.getElementById('clzMeaning');
-  mz.innerHTML='<b>'+o.w+'</b> — '+(o.pos?o.pos+' ':'')+(o.cn||'（暂无释义）');
+  mz.innerHTML='<b>'+gmEsc(o.w)+'</b> — '+gmEsc((o.pos?o.pos+' ':'')+(o.cn||'（暂无释义）'));
   mz.classList.add('shown');
 }
 $('#clozePassage').addEventListener('click', function(e){
@@ -3445,8 +3508,27 @@ function showToast(msg){
 const GROUP_SIZE=10;
 let wGroup=[], wIdx=0, wMarks={k:0,u:0};
 
-function getWordState(){ try{ return JSON.parse(localStorage.getItem('yt_words')||'{}'); }catch(e){ return {}; } }
-function saveWordState(st){ try{ localStorage.setItem('yt_words', JSON.stringify(st)); }catch(e){} }
+/* 背词状态内存缓存（2026-11-22 体检修复）：此前每点一词就全量 JSON.parse+stringify
+   （极限 ~0.7MB），背词页连点时手机主线程逐次卡顿——现缓存 + 300ms 合并写入，
+   页面隐藏/关闭时冲刷，不丢最后一次点击 */
+let WORD_STATE_CACHE=null, WORD_SAVE_T=null;
+function getWordState(){
+  if(WORD_STATE_CACHE) return WORD_STATE_CACHE;
+  try{ WORD_STATE_CACHE=JSON.parse(localStorage.getItem('yt_words')||'{}'); }catch(e){ WORD_STATE_CACHE={}; }
+  return WORD_STATE_CACHE;
+}
+function flushWordState(){
+  if(!WORD_SAVE_T) return;
+  clearTimeout(WORD_SAVE_T); WORD_SAVE_T=null;
+  if(WORD_STATE_CACHE) ytSetItem('yt_words', JSON.stringify(WORD_STATE_CACHE), '⚠️ 存储空间不足：背词进度未保存');
+}
+function saveWordState(st){
+  WORD_STATE_CACHE=st;
+  if(WORD_SAVE_T) return;
+  WORD_SAVE_T=setTimeout(function(){ WORD_SAVE_T=null; flushWordState(); },300);
+}
+window.addEventListener('pagehide', flushWordState);
+window.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden') flushWordState(); });
 function markWord(w,s){
   const st=getWordState(); st[w]={s,t:Date.now()}; saveWordState(st);
   if(s==='k') wMarks.k++; else wMarks.u++;
@@ -3472,12 +3554,26 @@ function pickGroup(){
     const e=idx[w];
     if(e){ group.push(e); picked.add(w); }
   });
-  const fresh=WORD_BANK.filter(function(e){ return !st[e[0]] && !picked.has(e[0]) && wordMatchesFilter(e); });
+  /* fresh/known 抽词（2026-11-22 体检修复）：随机起点环形扫描、抽满即停——
+     替代 22295 词全表 filter（每次换组 50-100ms 主线程停顿）；多数词已标记时退化为全扫，与原先一致 */
+  let fresh=[];
+  if(group.length<GROUP_SIZE){
+    const n=WORD_BANK.length, start=Math.floor(Math.random()*n);
+    for(let i=0;i<n && fresh.length<GROUP_SIZE;i++){
+      const e=WORD_BANK[(start+i)%n];
+      if(!st[e[0]] && !picked.has(e[0]) && wordMatchesFilter(e)) fresh.push(e);
+    }
+  }
   while(group.length<GROUP_SIZE && fresh.length){
     group.push(fresh.splice(Math.floor(Math.random()*fresh.length),1)[0]);
   }
   if(group.length<GROUP_SIZE){
-    const known=WORD_BANK.filter(([w])=>st[w] && st[w].s==='k' && !picked.has(w));
+    const known=[];
+    const n2=WORD_BANK.length, start2=Math.floor(Math.random()*n2);
+    for(let i=0;i<n2 && known.length<GROUP_SIZE;i++){
+      const e=WORD_BANK[(start2+i)%n2];
+      if(st[e[0]] && st[e[0]].s==='k' && !picked.has(e[0])) known.push(e);
+    }
     while(group.length<GROUP_SIZE && known.length){
       group.push(known.splice(Math.floor(Math.random()*known.length),1)[0]);
     }
@@ -3782,6 +3878,23 @@ $('#themeBtn').onclick=()=>{
   showToast(next==='auto'
     ? ('已跟随系统（当前'+(resolveTheme()==='dark'?'深色':'浅色')+'）')
     : (next==='dark' ? '已切换深色模式' : '已切换浅色模式'));
+};
+
+/* 动效开关（2026-11-22 体检修复）：关掉常驻装饰层（胶片颗粒/花瓣/剪影/ Rays）——
+   低端安卓发热耗电、阅读页掉帧的常驻税；关后立即生效，不用刷新 */
+function ytFxOff(){ try{ return localStorage.getItem('yt_fx')==='1'; }catch(e){ return false; } }
+function applyFxIcon(){
+  const btn=$('#fxBtn');
+  if(!btn) return;
+  btn.textContent = ytFxOff() ? '💤' : '✨';
+  btn.title = ytFxOff() ? '动效：已关（省电）' : '动效：已开';
+}
+$('#fxBtn').onclick=()=>{
+  const off=!ytFxOff();
+  try{ localStorage.setItem('yt_fx', off?'1':'0'); }catch(e){}
+  if(window.__ytFx) window.__ytFx();
+  applyFxIcon(); saveSettings();
+  showToast(off?'动效已关（省电模式）——常驻装饰层已移除':'动效已开');
 };
 try{
   if(window.matchMedia){
@@ -5480,7 +5593,7 @@ async function gradeTrans(){
   showToast('✅ 翻译批改完成：'+Math.max(0,Math.min(10,Math.round(j.total||0)))+'/10 分');
 }
 function getTrans(){ try{ return JSON.parse(localStorage.getItem('yt_trans')||'[]'); }catch(e){ return []; } }
-function saveTrans(h){ try{ localStorage.setItem('yt_trans', JSON.stringify(h.slice(0,20))); }catch(e){} }
+function saveTrans(h){ ytSetItem('yt_trans', JSON.stringify(h.slice(0,20)), '⚠️ 存储空间不足：翻译记录未保存'); }
 $('#trBack').onclick=function(){ stopTts(); showHome(); };
 
 /* ---------- 考研一 · 完形填空（20 空四选一） ---------- */

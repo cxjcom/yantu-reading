@@ -509,6 +509,23 @@
     document.body.appendChild(f);
   }
 
+  /* ---------- 动效开关（2026-11-22 体检修复）：yt_fx=1 不铺常驻装饰层 ----------
+     胶片颗粒/花瓣/剪影/Rays 是全站常驻 GPU 重绘，低端安卓发热耗电掉帧的主因；
+     关掉的只是「常驻税」，交互式入场动画（arm* 系列）保留。core.js 顶栏 ✨ 按钮触发 */
+  function fxOff(){ try{ return localStorage.getItem('yt_fx')==='1'; }catch(e){ return false; } }
+  function plantConstantLayers(){ ensureFilm(); ensureArt(); injectSilhouettes(); plantAmbient(); }
+  function removeConstantLayers(){
+    const f=document.getElementById('mFilm'); if(f) f.remove();
+    const a=document.getElementById('mArt'); if(a) a.remove();
+    document.querySelectorAll('.mAmbient,.mSil').forEach(function(n){ n.remove(); });
+  }
+  function applyFx(){
+    const off=fxOff();
+    document.documentElement.classList.toggle('motion-off', off);
+    if(off) removeConstantLayers(); else plantConstantLayers();
+  }
+  window.__ytFx=applyFx;
+
   function init(){
     lastScene = null;                                      /* null 强制首屏也走一次完整开镜（v3/v4 首屏动效从未触发的根因） */
     const obs = new MutationObserver(function(){ setTimeout(onSwitch, 0); });
@@ -517,13 +534,10 @@
       if(el) obs.observe(el, {attributes:true, attributeFilter:['style']});
     });
     watchStages();
-    plantAmbient();
     armImpact();
     armDetails();
     armShelfEQ();
-    ensureFilm();
-    ensureArt();
-    injectSilhouettes();
+    applyFx();                                             /* 按 yt_fx 决定铺/不铺常驻装饰层 */
     onSwitch();                                            /* 首屏：案头专属入场 */
   }
   if(document.readyState === 'loading'){

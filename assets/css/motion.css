@@ -462,3 +462,9 @@ html[data-theme="dark"] .mPix{color:#e8dcc2;opacity:.07;}
   #mArt *{animation:none !important;}
   .mFigGl{opacity:0 !important;}
 }
+
+/* 动效开关（yt_fx=1，core.js 顶栏 ✨）：常驻装饰层由 motion.js 的 applyFx 移除，此规则兜底防闪烁 */
+html.motion-off #mFilm,
+html.motion-off #mArt,
+html.motion-off .mAmbient,
+html.motion-off .mSil{display:none !important;}

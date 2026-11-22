@@ -18,8 +18,43 @@ function json(obj, status) {
   });
 }
 
+/* ========== 安全防护（2026-11-22 体检修复，用户要求）==========
+   1) Origin 校验：浏览器 POST 必带 Origin 头——只放行本站域名；curl/脚本无 Origin 一律 403，
+      堵死「匿名白嫖 Workers AI 配额」与「开放中转当匿名代理」两个滥用面。
+      原注释「无限流（用户要求）」语境是不限自家使用——公网匿名滥用面未设防，现补上。
+   2) 每 IP 双窗限流（内存近似，跨 isolate 不精确但足以挡脚本刷量）：
+      每分钟 10 次 + 每小时 80 次。自家正常用法：单次生成 1-2 个请求（竞速双路），余量充足。 */
+function originAllowed(request) {
+  const origin = request.headers.get('origin') || '';
+  if (!origin) return false;
+  try {
+    const o = new URL(origin);
+    if (o.origin === new URL(request.url).origin) return true;            /* 同源（预览域/自定义域自动覆盖） */
+    const h = o.hostname;
+    if (h === 'yantu-reading.pages.dev' || h.endsWith('.yantu-reading.pages.dev')) return true;
+    return false;
+  } catch (e) { return false; }
+}
+const RL = (globalThis.__ytRL || (globalThis.__ytRL = new Map()));
+function rateLimited(ip) {
+  const now = Date.now();
+  let e = RL.get(ip);
+  if (!e || now - e.win0 > 3600000) { e = { win0: now, hour: 0, min0: now, min: 0 }; RL.set(ip, e); }
+  if (now - e.min0 > 60000) { e.min0 = now; e.min = 0; }
+  e.min++; e.hour++;
+  if (RL.size > 5000) { for (const k of RL.keys()) { const v = RL.get(k); if (v && now - v.win0 > 3600000) RL.delete(k); } }
+  return e.min > 10 || e.hour > 80;
+}
+
 export async function onRequestPost(context) {
   const request = context.request;
+  if (!originAllowed(request)) {
+    return json({ error: { message: 'forbidden: origin not allowed' } }, 403);
+  }
+  const rlIp = request.headers.get('cf-connecting-ip') || 'unknown';
+  if (rateLimited(rlIp)) {
+    return json({ error: { message: 'rate limited: try later' } }, 429);
+  }
   const aiBinding = (context.env && context.env.AI) ? context.env.AI : null;
   let body;
   try { body = await request.json(); } catch (e) { return json({ error: { message: 'bad json' } }, 400); }
@@ -40,18 +75,22 @@ export async function onRequestPost(context) {
     const eu = String(body.ep.url).replace(/\/+$/, '');
     if (/^https:\/\/[^/]+\/chat\/completions$/.test(eu)) {
       try {
+        const epBody = {
+          model: String(body.ep.model).slice(0, 100),
+          messages: msgs,
+          temperature: body.temperature != null ? body.temperature : 0.6,
+          stream: false
+        };
+        /* max_tokens 透传（2026-11-22 体检⑤）：客户端 yt_maxtok 配置，64-32768 合法 */
+        const epMt = Number(body.ep.maxTok);
+        if (epMt >= 64 && epMt <= 32768) epBody.max_tokens = epMt;
         const r = await fetch(eu, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + String(body.ep.key || '').slice(0, 300)
           },
-          body: JSON.stringify({
-            model: String(body.ep.model).slice(0, 100),
-            messages: msgs,
-            temperature: body.temperature != null ? body.temperature : 0.6,
-            stream: false
-          })
+          body: JSON.stringify(epBody)
         });
         if (r.ok) {
           const j = await r.json().catch(function () { return null; });

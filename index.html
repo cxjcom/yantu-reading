@@ -8,8 +8,8 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=82">
-<link rel="stylesheet" href="assets/css/motion.css?v=28">
+<link rel="stylesheet" href="assets/css/app.css?v=83">
+<link rel="stylesheet" href="assets/css/motion.css?v=29">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
@@ -397,6 +397,7 @@
   <div class="tbTitle" id="sceneTitle">工作台</div>
   <div class="tbTools">
     <button class="inkBtn" id="fsBtn" title="正文字号">Aa</button>
+    <button class="inkBtn" id="fxBtn" title="动效开/关（关=省电）">✨</button>
     <button class="inkBtn" id="themeBtn" title="深色 / 浅色">🌙</button>
   </div>
 </header>
@@ -480,6 +481,7 @@
             <input class="aiIn" id="aiUrl" placeholder="接口地址（OpenAI 兼容 /v1/chat/completions）">
             <input class="aiIn" id="aiModel" placeholder="模型名（如 glm-4-flash / qwen2.5:7b）——可手填，或点下方「模型列表」选">
             <input class="aiIn" id="aiKey" placeholder="API Key（可空）">
+            <input class="aiIn" id="aiMaxTok" inputmode="numeric" placeholder="max_tokens 输出上限（留空=服务商默认；免费档截断可填 8192）">
             <select class="aiIn" id="aiModelPick" style="display:none;" title="从服务商拉取的模型列表，选中即回填模型名"></select>
           </div>
           <div class="btnRow">
@@ -853,9 +855,9 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=108"></script>
-<script src="assets/js/book.js?v=79"></script>
-<script src="assets/js/motion.js?v=28"></script>
+<script src="assets/js/core.js?v=109"></script>
+<script src="assets/js/book.js?v=80"></script>
+<script src="assets/js/motion.js?v=29"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){
