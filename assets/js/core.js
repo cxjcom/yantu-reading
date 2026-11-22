@@ -1149,7 +1149,7 @@ function aiCfgFill(){
 }
 /* ---------- 模型↔API 自动绑定（用户要求）：模型家族与接口地址不一致时，
    保存/测试连通自动套用已存方案里对应服务商的地址+Key；没有对应方案则拒绝保存（防废配置） ---------- */
-function aiFamName(f){ return ({glm:'智谱', deepseek:'DeepSeek', kimi:'Kimi', doubao:'豆包', qwen:'Qwen系'})[f]||f; }
+function aiFamName(f){ return ({glm:'智谱', deepseek:'DeepSeek', kimi:'Kimi', doubao:'豆包', qwen:'Qwen系', siliconflow:'硅基流动', openrouter:'OpenRouter', hunyuan:'腾讯混元', qianfan:'百度千帆'})[f]||f; }
 function aiModelFamily(m){
   m=String(m||'').toLowerCase();
   if(m.indexOf('glm')===0) return 'glm';
@@ -1157,6 +1157,8 @@ function aiModelFamily(m){
   if(m.indexOf('kimi')===0||m.indexOf('moonshot')===0) return 'kimi';
   if(m.indexOf('doubao')===0) return 'doubao';
   if(m.indexOf('qwen')===0) return 'qwen';
+  if(m.indexOf('ernie')===0) return 'qianfan';
+  if(m.indexOf('hunyuan')===0) return 'hunyuan';
   return '';
 }
 function aiUrlFamily(u){
@@ -1165,13 +1167,19 @@ function aiUrlFamily(u){
   if(u.indexOf('deepseek')>=0) return 'deepseek';
   if(u.indexOf('moonshot')>=0) return 'kimi';
   if(u.indexOf('volcengine')>=0||u.indexOf('/ark')>=0) return 'doubao';
-  if(u.indexOf('siliconflow')>=0) return 'qwen';
+  if(u.indexOf('siliconflow')>=0) return 'siliconflow';
+  if(u.indexOf('openrouter')>=0) return 'openrouter';
+  if(u.indexOf('hunyuan')>=0) return 'hunyuan';
+  if(u.indexOf('qianfan')>=0||u.indexOf('baidubce')>=0) return 'qianfan';
   return '';
 }
+/* 聚合平台：一家 URL 托管多家模型（硅基流动跑 deepseek-ai/DeepSeek-V3、
+   千帆跑 deepseek-v3、OpenRouter 全家桶都合法）——绑定校验对它们放行 */
+function aiUrlIsAgg(u){ const f=aiUrlFamily(u); return f==='siliconflow'||f==='openrouter'||f==='qianfan'; }
 /* 返回 {url,model,key,note} 或 null（拒绝保存，错误信息已写入 m） */
 function aiProviderBind(url, model, key, m){
   const fam=aiModelFamily(model), ufam=aiUrlFamily(url);
-  if(!fam || !ufam || fam===ufam) return {url:url, model:model, key:key, note:''};
+  if(!fam || !ufam || fam===ufam || aiUrlIsAgg(url)) return {url:url, model:model, key:key, note:''};
   const cand=providerList().find(function(p){ return aiUrlFamily(p.url)===fam; });
   if(cand){
     const note='模型 '+model+' 属于「'+aiFamName(fam)+'」，已自动套用「'+(cand.name||'方案')+'」的地址与 Key';
@@ -1249,7 +1257,7 @@ $('#aiModelPick').onchange=function(){
   document.getElementById('aiModel').value=this.value;
   const m=document.getElementById('aiCfgMsg');
   const fam=aiModelFamily(this.value), ufam=aiUrlFamily(document.getElementById('aiUrl').value);
-  if(m && fam && ufam && fam!==ufam){ m.textContent='ℹ️ 选中的「'+this.value+'」属于「'+aiFamName(fam)+'」——点「保存」会自动套用其方案的地址与 Key'; m.style.color='#2e9e5b'; }
+  if(m && fam && ufam && fam!==ufam && !aiUrlIsAgg(document.getElementById('aiUrl').value)){ m.textContent='ℹ️ 选中的「'+this.value+'」属于「'+aiFamName(fam)+'」——点「保存」会自动套用其方案的地址与 Key'; m.style.color='#2e9e5b'; }
 };
 try{ aiModelistRestore(); }catch(e){}
 /* ---------- 方案快切：多服务商配置档——点方案名一键切换整套 API（地址+模型+Key 联动） ---------- */
@@ -1262,6 +1270,8 @@ function providerLabel(url){
   if(u.indexOf('volcengine')>=0||u.indexOf('/ark')>=0) return '豆包';
   if(u.indexOf('localhost')>=0||u.indexOf('127.0.0.1')>=0) return 'Ollama';
   if(u.indexOf('openrouter')>=0) return 'OpenRouter';
+  if(u.indexOf('hunyuan')>=0) return '腾讯混元';
+  if(u.indexOf('qianfan')>=0||u.indexOf('baidubce')>=0) return '百度千帆';
   if(u.indexOf('pollinations')>=0) return 'Pollinations';
   try{ return (new URL(u)).hostname.replace(/^api\d*\./,''); }catch(e){ return '自定义'; }
 }
@@ -1786,7 +1796,7 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000)), {
       lose:function(){ epHealthSet('CUSTOM_FAIL', Date.now()); }
     }));
-    const knownNoCors=/bigmodel|moonshot|volcengine|open\.bigmodel/i.test(cfg.url);
+    const knownNoCors=/bigmodel|moonshot|volcengine|siliconflow|hunyuan/i.test(cfg.url);
     const h0=epHealth();
     const recentFail=h0.CUSTOM_FAIL && (Date.now()-h0.CUSTOM_FAIL)<3600000;
     if((knownNoCors || recentFail) && typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){
