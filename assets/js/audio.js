@@ -60,25 +60,30 @@
     }catch(e){ return false; }
   }
 
-  /* ---------- 音色（v1.11.1 柔化：sine 为主圆润音体、慢起音、暗低通、瞬态大幅减弱） ---------- */
+  /* ---------- 音色（v1.11.2 轻质化：八音盒/风铃质感——纯 sine 高八度 +
+     微失谐空间泛音 + 非谐泛音微光，去低频浑浊；不再是钢琴/木琴体） ---------- */
   function pluck(dest, freq, t, dur, vel){
-    var o1=ctx.createOscillator(), o2=ctx.createOscillator(), g=ctx.createGain(), f=ctx.createBiquadFilter();
-    o1.type='sine';     o1.frequency.value=freq;
-    o2.type='triangle'; o2.frequency.value=freq;
-    f.type='lowpass'; f.frequency.setValueAtTime(1500,t); f.frequency.exponentialRampToValueAtTime(500,t+dur);
-    var g2=ctx.createGain(); g2.gain.value=0.18; o2.connect(g2);
-    o1.connect(f); g2.connect(f); f.connect(g);
+    var fq=freq*2;                                            /* 音区上移一个八度：轻盈 */
+    var o1=ctx.createOscillator(), o2=ctx.createOscillator(), o3=ctx.createOscillator(), g=ctx.createGain(), f=ctx.createBiquadFilter();
+    o1.type='sine'; o1.frequency.value=fq;                    /* 基音主体 */
+    o2.type='sine'; o2.frequency.value=fq*2.76;               /* 非谐泛音：风铃微光 */
+    o3.type='sine'; o3.frequency.value=fq*1.003;              /* 微失谐：空间感 */
+    f.type='highpass'; f.frequency.value=300;                 /* 去低频浑浊 */
+    var g2=ctx.createGain(); g2.gain.value=0.10; o2.connect(g2);
+    var g3=ctx.createGain(); g3.gain.value=0.09; o3.connect(g3);
+    o1.connect(f); g2.connect(f); g3.connect(f); f.connect(g);
     g.gain.setValueAtTime(0.0001,t);
-    g.gain.exponentialRampToValueAtTime(vel,t+0.05);          /* 慢起音：柔和无敲击感 */
+    g.gain.exponentialRampToValueAtTime(vel,t+0.035);
     g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-    o1.connect(g); o1.start(t); o1.stop(t+dur+0.05);
-    o2.connect(g); o2.start(t); o2.stop(t+dur+0.05);
+    o1.start(t); o1.stop(t+dur+0.05);
+    o2.start(t); o2.stop(t+Math.min(dur,0.9));
+    o3.start(t); o3.stop(t+dur+0.05);
     g.connect(dest);
     var nb=ctx.createBuffer(1,Math.floor(ctx.sampleRate*0.02),ctx.sampleRate), nd=nb.getChannelData(0);
     for(var i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*(1-i/nd.length);
     var ns=ctx.createBufferSource(); ns.buffer=nb;
-    var nf=ctx.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=Math.min(freq*2.2,3800); nf.Q.value=1.4;
-    var ng=ctx.createGain(); ng.gain.value=vel*0.18;
+    var nf=ctx.createBiquadFilter(); nf.type='highpass'; nf.frequency.value=5000;
+    var ng=ctx.createGain(); ng.gain.value=vel*0.10;
     ns.connect(nf); nf.connect(ng); ng.connect(dest); ns.start(t);
   }
   function flute(dest, freq, t, dur){
@@ -115,7 +120,7 @@
       lfo.type='sine'; lfo.frequency.value=0.07; lg.gain.value=0.013;
       lfo.connect(lg); lg.connect(g.gain);
       g.gain.setValueAtTime(0.0001,t);
-      g.gain.exponentialRampToValueAtTime(0.030,t+1.5);
+      g.gain.exponentialRampToValueAtTime(0.022,t+1.5);
       o.connect(g); g.connect(musicBus);
       o.start(t); lfo.start(t);
       droneNode={o:o,g:g,lfo:lfo};
@@ -142,8 +147,9 @@
       else walkIdx+=(Math.random()<0.5?-1:1);
       if(walkIdx<0) walkIdx=2; if(walkIdx>9) walkIdx=7;
       var oct=Math.floor(walkIdx/P.length), deg=walkIdx%P.length;
-      var freq=cfg.base*Math.pow(2,(P[deg]+12*oct+cfg.hi)/12);
-      pluck(bus,freq,t,cfg.dur,0.11+Math.random()*0.05);      /* 音量降档：轻柔铺 */
+      var freq=cfg.base*Math.pow(2,(P[deg]+12*oct+cfg.hi)/12)*2;   /* 全局高八度：轻质感 */
+      while(freq>1760) freq/=2;                                     /* 防刺耳上限 */
+      pluck(bus,freq,t,cfg.dur,0.09+Math.random()*0.04);           /* 音量再降：轻盈点缀 */
       if(Math.random()<cfg.flute) flute(bus,freq*2,t+0.05,cfg.dur*0.8);
       if(cfg.perc&&Math.random()<cfg.perc) tickPerc(bus,t+cfg.step*0.5);
       nextNote=t+cfg.step*(0.85+Math.random()*0.35);
