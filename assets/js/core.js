@@ -1294,6 +1294,7 @@ function providerLabel(url){
   if(u.indexOf('localhost')>=0||u.indexOf('127.0.0.1')>=0) return 'Ollama';
   if(u.indexOf('openrouter')>=0) return 'OpenRouter';
   if(u.indexOf('hunyuan')>=0) return '腾讯混元';
+  if(u.indexOf('tencentmaas')>=0) return 'TokenHub';
   if(u.indexOf('qianfan')>=0||u.indexOf('baidubce')>=0) return '百度千帆';
   if(u.indexOf('pollinations')>=0) return 'Pollinations';
   try{ return (new URL(u)).hostname.replace(/^api\d*\./,''); }catch(e){ return '自定义'; }
@@ -1821,8 +1822,9 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
       lose:function(){ epHealthSet('CUSTOM_FAIL', Date.now()); }
     }));
     /* moonshot 已移出（v1.10.32）：实测 Kimi 支持 CORS 直连（204+ACAO），恒走中转属冗余双发；
-       直连万一失败仍有 CUSTOM_FAIL 一小时内自愈兜底 */
-    const knownNoCors=/bigmodel|volcengine|siliconflow|hunyuan/i.test(cfg.url);
+       直连万一失败仍有 CUSTOM_FAIL 一小时内自愈兜底。
+       tencentmaas 加入（v1.10.33）：TokenHub 接口预检 405 无 CORS，须走中转代调 */
+    const knownNoCors=/bigmodel|volcengine|siliconflow|hunyuan|tencentmaas/i.test(cfg.url);
     const h0=epHealth();
     const recentFail=h0.CUSTOM_FAIL && (Date.now()-h0.CUSTOM_FAIL)<3600000;
     if((knownNoCors || recentFail) && typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){

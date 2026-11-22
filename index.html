@@ -8,8 +8,8 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=84">
-<link rel="stylesheet" href="assets/css/motion.css?v=30">
+<link rel="stylesheet" href="assets/css/app.css?v=85">
+<link rel="stylesheet" href="assets/css/motion.css?v=31">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
@@ -469,13 +469,13 @@
             <button class="aiPreset" data-u="https://api.deepseek.com/chat/completions" data-m="deepseek-chat">DeepSeek（超低价）</button>
             <button class="aiPreset" data-u="https://api.moonshot.cn/v1/chat/completions" data-m="moonshot-v1-8k">Kimi（送额度）</button>
             <button class="aiPreset" data-u="https://ark.cn-beijing.volces.com/api/v3/chat/completions" data-m="doubao-pro-32k">豆包（送额度）</button>
-            <button class="aiPreset" data-u="https://api.hunyuan.cloud.tencent.com/v1/chat/completions" data-m="hunyuan-lite">腾讯混元（lite免费）</button>
+            <button class="aiPreset" data-u="https://tokenhub.tencentmaas.com/v1/chat/completions" data-m="deepseek-v4.1-flash">腾讯TokenHub（体验包）</button>
             <button class="aiPreset" data-u="https://qianfan.baidubce.com/v2/chat/completions" data-m="ernie-4.5-turbo-128k">百度千帆（文心·送额度）</button>
             <button class="aiPreset" data-u="https://openrouter.ai/api/v1/chat/completions" data-m="baidu/ernie-5.5-flash-preview:free">OpenRouter（免费·限次）</button>
             <button class="aiPreset" data-u="http://localhost:11434/v1/chat/completions" data-m="qwen2.5:7b">Ollama（离线）</button>
           </div>
           <div class="cfgNote">
-            Key 获取：<b>智谱</b> bigmodel.cn（Flash 系列免费）· <b>硅基流动</b> cloud.siliconflow.cn（免费模型十几个，点「模型列表」拉取自选）· <b>DeepSeek</b> platform.deepseek.com（约1元/百万词，极便宜）· <b>Kimi</b> platform.moonshot.cn（注册送15元）· <b>豆包</b> 火山方舟 console.volcengine.com/ark（每模型每日送额度）· <b>腾讯混元</b> console.cloud.tencent.com（hunyuan-lite 长期免费）· <b>百度千帆</b> console.bce.baidu.com/qianfan（文心4.5-Turbo 送100万词/3个月，Lite/Speed 长期免费）· <b>OpenRouter</b> openrouter.ai（聚合多家免费模型，免费档每天约50次）。注册 → 创建 API Key → 粘贴到下方密钥栏。
+            Key 获取：<b>智谱</b> bigmodel.cn（Flash 系列免费）· <b>硅基流动</b> cloud.siliconflow.cn（免费模型十几个，点「模型列表」拉取自选）· <b>DeepSeek</b> platform.deepseek.com（约1元/百万词，极便宜）· <b>Kimi</b> platform.moonshot.cn（注册送15元）· <b>豆包</b> 火山方舟 console.volcengine.com/ark（每模型每日送额度）· <b>腾讯TokenHub</b> console.cloud.tencent.com/tokenhub（聚合 DeepSeek-V4.1/GLM-5.3/Kimi 等，新人免费体验包）· <b>百度千帆</b> console.bce.baidu.com/qianfan（文心4.5-Turbo 送100万词/3个月，Lite/Speed 长期免费）· <b>OpenRouter</b> openrouter.ai（聚合多家免费模型，免费档每天约50次）。注册 → 创建 API Key → 粘贴到下方密钥栏。
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;">
             <input class="aiIn" id="aiUrl" placeholder="接口地址（OpenAI 兼容 /v1/chat/completions）">
@@ -855,9 +855,9 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=110"></script>
-<script src="assets/js/book.js?v=81"></script>
-<script src="assets/js/motion.js?v=30"></script>
+<script src="assets/js/core.js?v=111"></script>
+<script src="assets/js/book.js?v=82"></script>
+<script src="assets/js/motion.js?v=31"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){
