@@ -1820,7 +1820,9 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000)), {
       lose:function(){ epHealthSet('CUSTOM_FAIL', Date.now()); }
     }));
-    const knownNoCors=/bigmodel|moonshot|volcengine|siliconflow|hunyuan/i.test(cfg.url);
+    /* moonshot 已移出（v1.10.32）：实测 Kimi 支持 CORS 直连（204+ACAO），恒走中转属冗余双发；
+       直连万一失败仍有 CUSTOM_FAIL 一小时内自愈兜底 */
+    const knownNoCors=/bigmodel|volcengine|siliconflow|hunyuan/i.test(cfg.url);
     const h0=epHealth();
     const recentFail=h0.CUSTOM_FAIL && (Date.now()-h0.CUSTOM_FAIL)<3600000;
     if((knownNoCors || recentFail) && typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){

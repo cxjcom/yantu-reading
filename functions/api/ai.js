@@ -1,15 +1,15 @@
 /* =====================================================
    研途阅读 · AI 同源中转（Cloudflare Pages Function）
-   手机运营商常拦 workbuddy.host / pollinations.ai——同源请求不会被拦。
-   收 OpenAI 格式请求 → 服务端多模型顺序回退调 WB 云端（SSE 聚合，
-   长度达标判断：<6500 字自动换模型）→ 失败回落 Pollinations →
+   手机运营商常拦外部 AI 域名——同源请求不会被拦。
+   收 OpenAI 格式请求 → ① 通用端点代调（客户端自带 Key 的无 CORS 服务商，
+   如智谱/豆包/混元/硅基流动）→ ② Pollinations 服务端回落 →
    返回 OpenAI 格式 JSON。
-   无限流、无短时限（用户要求）：仅保留消息封顶与服务端 175s 总程，
-   等满 175s 比提前失败更符合生成场景。
+   WB 云端回退已移除（v1.10.32）：服务端无 WB 登录态，调用必返回
+   login_required——此前每笔中转请求白试 3 次池模型；浏览器 WB 通道
+   （SDK 直连+cookie）独立存在，不受本次删除影响。
+   Workers AI 回退已移除（v1.10.31）：CF 账号资源不可被第三方消费。
+   仅保留消息封顶、Origin 白名单、每 IP 限流与服务端 175s 总程。
    ===================================================== */
-const WB_CHAT = 'https://kaoyan-reading-65228.app.workbuddy.host/.cloud/llm/chat/completions';
-const WB_KEY = 'wbpk_xBdw1VVfFNuWiVJgnZPy_EY32VZ53l9ecPE5JwddrM6FHqeySawSU';
-const WB_POOL = ['auto', 'hy4std', 'fast-model'];
 
 function json(obj, status) {
   return new Response(JSON.stringify(obj), {
@@ -107,18 +107,10 @@ export async function onRequestPost(context) {
     }
   }
 
-  /* ① WB 云端多模型顺序回退（SSE 聚合，长度达标判断） */
-  try {
-    const text = await wbRace(msgs, body.temperature, body.model, diag);
-    if (text && text.trim().length > 2) {
-      return json({ choices: [{ message: { role: 'assistant', content: text } }] });
-    }
-    diag.wb = '竞速全空 (' + diag.wb + ')';
-  } catch (e) { diag.wb = 'ERR:' + String(e && e.message || e).slice(0, 60); }
-
-  /* ② Cloudflare Workers AI 回退已移除（2026-11-22 v1.10.31，用户要求丢弃该线路）：
-     你的 CF 账号资源从此不可被任何第三方消费；无 Key 裸奔模式的兜底改由服务端 Pollinations 承担。
-     后台 Pages 项目里的 AI 绑定可留可删——已无代码引用 */
+  /* ① WB 云端回退已移除（v1.10.32）：服务端无 WB 登录态必 login_required，
+     每笔请求此前白试 3 次池模型；浏览器 WB 通道（SDK+cookie）不受影响 */
+  /* ② Cloudflare Workers AI 回退已移除（v1.10.31）：
+     CF 账号资源从此不可被任何第三方消费 */
 
   /* ③ Pollinations 服务端回落 */
   try {
@@ -141,88 +133,6 @@ export async function onRequestPost(context) {
   } catch (e) { diag.poll = 'ERR:' + String(e && e.message || e).slice(0, 60); }
 
   return json({ error: { message: '上游端点均不可用' }, diag: diag }, 502);
-}
-
-/* 多模型顺序回退 + 长度达标判断：WB 对同 key 并发流有限制（3 路并行实测全空），
-   且 auto 等模型存在 ~5000 字符输出截断——输出不足 6500 字时自动换下一个模型，
-   池耗尽/总程 175s 时返回历史最长输出（客户端校验兜底） */
-async function wbRace(msgs, temperature, preferModel, diag) {
-  const pool = [];
-  const add = function (m) {
-    if (m && typeof m === 'string' && m !== 'shell' && pool.indexOf(m) < 0) pool.push(m);
-  };
-  add('auto');                                          /* auto 历史输出最长（6400-7000 字），置顶 */
-  if (preferModel && preferModel !== 'auto') add(preferModel);
-  WB_POOL.forEach(add);
-  if (!pool.length) pool.push('auto');
-  diag.wb = 'pool[' + pool.join(',') + ']';
-
-  const GOOD = 6500;
-  const t0 = Date.now();
-  let best = '', bestLen = 0;
-  for (let i = 0; i < pool.length; i++) {
-    if (Date.now() - t0 > 170000) { diag.wb += ' 总程175s到'; break; }
-    const text = await wbChat(pool[i], msgs, temperature);
-    const L = (text || '').trim().length;
-    if (L > bestLen) { bestLen = L; best = text || ''; }
-    diag.wb += ' ' + pool[i] + ':' + L + '字';
-    if (L >= GOOD) break;
-  }
-  if (bestLen > 0) diag.wb += ' 返回' + bestLen + '字';
-  return best;
-}
-
-/* 单通道 WB SSE 聚合：无空闲掐断（流式只要还在产 token 就继续等），
-   仅保留单模型 90s 上限避免单模型吃光总程 */
-async function wbChat(model, msgs, temperature) {
-  const ctrl = new AbortController();
-  const t0 = Date.now();
-  const hard = setTimeout(function () { ctrl.abort(); }, 90000);
-  try {
-    const r = await fetch(WB_CHAT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream',
-        'x-wb-webapp-access-key': WB_KEY
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: msgs,
-        stream: true,
-        temperature: temperature != null ? temperature : 0.6
-      }),
-      signal: ctrl.signal
-    });
-    if (!r.ok || !r.body) { clearTimeout(hard); return ''; }
-    const reader = r.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '', out = '';
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      buf += dec.decode(chunk.value, { stream: true });
-      if (Date.now() - t0 > 90000) break;
-      let idx;
-      while ((idx = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, idx).trim();
-        buf = buf.slice(idx + 1);
-        if (line.indexOf('data:') !== 0) continue;
-        const payload = line.slice(5).trim();
-        if (payload === '[DONE]') { clearTimeout(hard); return out; }
-        try {
-          const j = JSON.parse(payload);
-          const d = j.choices && j.choices[0] && j.choices[0].delta;
-          if (d && d.content) out += d.content;
-        } catch (e) { /* 忽略无法解析的行 */ }
-      }
-    }
-    clearTimeout(hard);
-    return out;
-  } catch (e) {
-    clearTimeout(hard);
-    return '';
-  }
 }
 
 /* 调试端点：GET /api/ai?debug=1 返回绑定状态（不含敏感信息） */
