@@ -8,8 +8,8 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=82">
-<link rel="stylesheet" href="assets/css/motion.css?v=28">
+<link rel="stylesheet" href="assets/css/app.css?v=83">
+<link rel="stylesheet" href="assets/css/motion.css?v=29">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
@@ -473,6 +473,22 @@
             <button class="aiPreset" data-u="https://openrouter.ai/api/v1/chat/completions" data-m="baidu/ernie-5.5-flash-preview:free">OpenRouter（免费·限次）</button>
             <button class="aiPreset" data-u="http://localhost:11434/v1/chat/completions" data-m="qwen2.5:7b">Ollama（离线）</button>
           </div>
+          <div class="cfgNote" style="border:1px dashed var(--line-strong,#c9b9a0);border-radius:10px;padding:8px 10px;">
+            🔑 <b>WorkBuddy 登录</b>：<span id="wbAuthState">检测中…</span>——登录后解锁 WB 全部模型目录，可任选其旗下模型生成（额度走 WB 账号）
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+              <input class="aiIn" id="wbEmail" placeholder="WB 账号（邮箱或用户名）" style="width:auto;flex:1 1 140px;min-width:140px;">
+              <input class="aiIn" id="wbPass" type="password" placeholder="WB 密码" style="width:auto;flex:1 1 110px;min-width:110px;">
+              <button id="wbLoginBtn" style="margin-top:0;">登录</button>
+              <button id="wbLogoutBtn" style="margin-top:0;display:none;">退出</button>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+              <button id="wbModelsBtn" style="margin-top:0;">📋 WB 模型目录</button>
+              <select class="aiIn" id="wbModelPick" style="display:none;width:auto;max-width:260px;flex:1 1 200px;"></select>
+              <span id="wbModelNow" style="font-size:12px;color:var(--muted,#888);"></span>
+            </div>
+            <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin-top:6px;"><input type="checkbox" id="wbPrefer"> ⚡ 主 Key 已设时也让 WB 抢跑生成（多消耗 WB 额度）</label>
+            <div id="wbAuthMsg" style="margin-top:4px;font-size:12px;color:var(--muted,#888);"></div>
+          </div>
           <div class="cfgNote">
             Key 获取：<b>智谱</b> bigmodel.cn（Flash 系列免费）· <b>硅基流动</b> cloud.siliconflow.cn（免费模型十几个，点「模型列表」拉取自选）· <b>DeepSeek</b> platform.deepseek.com（约1元/百万词，极便宜）· <b>Kimi</b> platform.moonshot.cn（注册送15元）· <b>豆包</b> 火山方舟 console.volcengine.com/ark（每模型每日送额度）· <b>腾讯混元</b> console.cloud.tencent.com（hunyuan-lite 长期免费）· <b>百度千帆</b> console.bce.baidu.com/qianfan（文心4.5-Turbo 送100万词/3个月，Lite/Speed 长期免费）· <b>OpenRouter</b> openrouter.ai（聚合多家免费模型，免费档每天约50次）。注册 → 创建 API Key → 粘贴到下方密钥栏。
           </div>
@@ -853,9 +869,9 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=108"></script>
-<script src="assets/js/book.js?v=79"></script>
-<script src="assets/js/motion.js?v=28"></script>
+<script src="assets/js/core.js?v=109"></script>
+<script src="assets/js/book.js?v=80"></script>
+<script src="assets/js/motion.js?v=29"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){

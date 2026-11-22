@@ -8,7 +8,10 @@
    等满 175s 比提前失败更符合生成场景。
    ===================================================== */
 const WB_CHAT = 'https://kaoyan-reading-65228.app.workbuddy.host/.cloud/llm/chat/completions';
-const WB_KEY = 'wbpk_xBdw1VVfFNuWiVJgnZPy_EY32VZ53l9ecPE5JwddrM6FHqeySawSU';
+/* 2026-11-22 修正：此 Key 原抄写丢字符（NuWiVJgn→正确 NuWiHiVJgn）报 invalid_client；
+   另 WB 平台已对 LLM 能力加登录墙（login_required）——服务端无用户登录态时此通道仍会失败，
+   属已知现状：WB 回落实际由浏览器 SDK 通道承担 */
+const WB_KEY = 'wbpk_xBdw1VVfFNuWiHiVJgnZPy_EY32VZ53l9ecPE5JwddrM6FHqeySawSU';
 const WB_POOL = ['auto', 'hy4std', 'fast-model'];
 
 function json(obj, status) {

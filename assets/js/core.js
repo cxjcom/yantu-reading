@@ -1360,12 +1360,14 @@ $('#epTestBtn').onclick=async function(){
   try{
     if(window.WorkBuddyCloud && WB_CLOUD){
       const t0=Date.now();
+      let authed=false;
+      try{ const s=await WB_CLOUD.auth.getSession(); authed=!!(s&&s.data); }catch(e){}
       const ms=await Promise.race([
         WB_CLOUD.llm.models.list(),
         new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('15 秒超时')); },15000); })
       ]);
       const n=(ms||[]).filter(function(m){ return m&&m.disabled!==true; }).length;
-      lines.push('✅ WorkBuddy 云端：可达，'+n+' 个模型（'+(Date.now()-t0)+'ms）');
+      lines.push((authed?'✅':'⚠️')+' WorkBuddy 云端：可达，'+n+' 个模型（'+(Date.now()-t0)+'ms）'+(authed?' · 已登录':' · 未登录（WB 平台对匿名调用返回 login_required，目录受限——去 AI 设置里登录 WB）'));
     }else{
       lines.push('❌ WorkBuddy SDK 未加载（lib/workbuddy-cloud-sdk.global.js 加载失败，试试强刷）');
     }
@@ -1432,6 +1434,90 @@ if(wbPresetBtn) wbPresetBtn.onclick=function(){
   m.innerHTML='已切换为 <b>WorkBuddy 云端 AI</b>（免 Key，最高优先级）— 点「测试连通」可验证';
   m.style.color='var(--muted)';
 };
+/* ---------- WB 登录（v109，用户要求耗 WB 额度+用其全部模型）：
+   登录后 SDK 自动给 llm 请求附 Bearer token（会话存 localStorage workbuddy-cloud.session.*），
+   解锁模型目录与全部模型；未登录时 WB 平台对 LLM 能力返回 login_required（2026-11-22 实测） ---------- */
+function wbMsg(t,bad){ const m=document.getElementById('wbAuthMsg'); if(m){ m.textContent=t; m.style.color=bad?'#d9534f':'#2e9e5b'; } }
+function wbModelNowPaint(){
+  const el=document.getElementById('wbModelNow'); if(!el) return;
+  let picked=''; try{ picked=localStorage.getItem('yt_wbmodel')||''; }catch(e){}
+  el.textContent=picked?('当前 WB 通道模型：'+picked):'当前 WB 通道模型：auto（平台自动路由）';
+}
+async function wbAuthPaint(){
+  const st=document.getElementById('wbAuthState'); if(!st) return;
+  if(!WB_CLOUD){ st.textContent='SDK 未加载（检查 lib/workbuddy-cloud-sdk.global.js 是否被插件拦截）'; st.style.color='#d9534f'; wbModelNowPaint(); return; }
+  let s=null;
+  try{ s=await WB_CLOUD.auth.getSession(); }catch(e){}
+  const outBtn=document.getElementById('wbLogoutBtn');
+  if(s&&s.data){
+    let name='';
+    try{
+      const u=await WB_CLOUD.auth.getUser();
+      const c=((u&&u.data)||{}).user||((u&&u.data)||{});
+      name=c.email||c.username||c.nickname||c.name||'';
+    }catch(e){}
+    st.textContent='✅ 已登录'+(name?('：'+String(name).slice(0,30)):'');
+    st.style.color='#2e9e5b';
+    if(outBtn) outBtn.style.display='';
+  }else{
+    st.textContent='未登录（匿名只能盲试 auto，拉不到模型目录）';
+    st.style.color='var(--muted)';
+    if(outBtn) outBtn.style.display='none';
+  }
+  wbModelNowPaint();
+}
+$('#wbLoginBtn').onclick=async function(){
+  if(!WB_CLOUD){ wbMsg('❌ WB SDK 未加载，强刷页面重试',true); return; }
+  const em=document.getElementById('wbEmail').value.trim(), pw=document.getElementById('wbPass').value;
+  if(!em||!pw){ wbMsg('先填 WB 账号和密码再登录',true); return; }
+  wbMsg('登录中…',false);
+  try{
+    const r=await WB_CLOUD.auth.signInWithPassword({email:em,password:pw});
+    if(r&&r.error){ wbMsg('❌ 登录失败：'+String(r.error.message||r.error.kind||'账号或密码不对').slice(0,60),true); return; }
+    document.getElementById('wbPass').value='';
+    wbMsg('✅ 登录成功——会话已本地保存，点「📋 WB 模型目录」拉取全部模型');
+    wbAuthPaint();
+  }catch(e){ wbMsg('❌ 登录失败：'+String(e&&e.message||e).slice(0,60),true); }
+};
+$('#wbLogoutBtn').onclick=async function(){
+  if(!WB_CLOUD) return;
+  try{ await WB_CLOUD.auth.signOut(); }catch(e){}
+  wbMsg('已退出 WB 登录——WB 通道回落匿名 auto 池',false);
+  wbAuthPaint();
+};
+$('#wbModelsBtn').onclick=async function(){
+  if(!WB_CLOUD){ wbMsg('❌ WB SDK 未加载',true); return; }
+  wbMsg('拉取 WB 模型目录…',false);
+  try{
+    const arr=await Promise.race([
+      WB_CLOUD.llm.models.list(),
+      new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('15 秒超时')); },15000); })
+    ]);
+    const ids=(Array.isArray(arr)?arr:[]).filter(function(m){ return m&&m.id&&m.disabled!==true; }).map(function(m){ return m.id; });
+    if(!ids.length){ wbMsg('❌ 目录为空——大概率未登录 WB（先登录再拉）',true); return; }
+    const pick=document.getElementById('wbModelPick');
+    let cur=''; try{ cur=localStorage.getItem('yt_wbmodel')||''; }catch(e){}
+    pick.innerHTML='<option value="">（默认 auto——平台自动路由）</option>'+ids.map(function(id){
+      return '<option value="'+String(id).replace(/"/g,'&quot;')+'"'+(id===cur?' selected':'')+'>'+String(id).replace(/</g,'&lt;')+'</option>';
+    }).join('');
+    pick.style.display='';
+    try{ localStorage.setItem('yt_wbmodels', JSON.stringify({t:Date.now(), ids:ids.slice(0,12)})); }catch(e){}
+    wbMsg('✅ 拉到 '+ids.length+' 个模型——下拉选一个作为 WB 通道默认模型，下次生成即生效',false);
+  }catch(e){ wbMsg('❌ 目录拉取失败（'+String(e&&e.message||e).slice(0,40)+'）——大概率未登录 WB 或被插件拦截',true); }
+};
+$('#wbModelPick').onchange=function(){
+  try{
+    if(this.value) localStorage.setItem('yt_wbmodel',this.value);
+    else localStorage.removeItem('yt_wbmodel');
+  }catch(e){}
+  wbModelNowPaint();
+  wbMsg(this.value?('✅ WB 通道模型已设为「'+this.value+'」'):'已恢复默认 auto',false);
+};
+$('#wbPrefer').onchange=function(){
+  try{ localStorage.setItem('yt_wb_prefer', this.checked?'1':'0'); }catch(e){}
+  showToast(this.checked?'⚡ WB 抢跑已开：主 Key 单通道下 WB 也参加生成竞速':'WB 抢跑已关');
+};
+try{ document.getElementById('wbPrefer').checked=(localStorage.getItem('yt_wb_prefer')==='1'); }catch(e){}
 $('#aiSeg').addEventListener('click', function(e){
   const b=e.target.closest('button'); if(!b) return;
   AI_MODE=(b.dataset.v==='ai');
@@ -1597,6 +1683,8 @@ try{
     });
   }
 }catch(e){ WB_CLOUD=null; }
+/* WB_CLOUD 初始化完成后才能绘制登录状态——登录卡代码在其之前执行，var 提升时 WB_CLOUD 还是 undefined */
+try{ wbAuthPaint(); }catch(e){}
 async function wbCloudChat(msgs,timeoutMs,temp,modelId,extraCtrlList){
   let txt='';
   if(!WB_CLOUD||!modelId) return txt;
@@ -1807,15 +1895,19 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     }
   }
   /* ② WB 云端：模型 id 优先用 localStorage 缓存（24h）——列表请求失败/超时不再把 WB 判死；
-     无缓存才请求列表（12s 超时），仍失败则盲试 'auto'（历次实测必通）。单通道模式不参赛 */
-  if(!singleMode){
+     无缓存才请求列表（12s 超时），仍失败则盲试 'auto'（历次实测必通）。单通道模式默认不参赛，
+     WB 登录卡「⚡抢跑」（yt_wb_prefer）开着时例外——用户显式要求耗 WB 额度 */
+  const wbPrefer=(function(){ try{ return localStorage.getItem('yt_wb_prefer')==='1'; }catch(e){ return false; } })();
+  if(!singleMode || wbPrefer){
   let wbId='';
   let wbBlind=false;              /* 列表被拦 ≠ 聊天被拦（手机运营商常见）：盲试 'auto'，失败也只花几秒 */
+  try{ const picked=localStorage.getItem('yt_wbmodel'); if(picked) wbId=picked; }catch(e){}   /* WB 登录卡选定的模型，最高优先——选定后跳过目录拉取省 12s */
   let wbCachedIds=null;
   try{
     const c=JSON.parse(localStorage.getItem('yt_wbmodels')||'null');
     if(c&&Array.isArray(c.ids)&&c.ids.length&&(now-c.t)<86400000) wbCachedIds=c.ids;
   }catch(e){}
+  if(!wbId){
   if(wbCachedIds){ wbId=wbCachedIds[0]; }
   else if(WB_CLOUD){
     if(health.WB_LIST_FAIL && (now-health.WB_LIST_FAIL)<60000){
@@ -1837,6 +1929,7 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
         wbBlind=true;
       }
     }
+  }
   }
   if(wbId && WB_CLOUD){
     tasks.push(wrap('WB:'+wbId, Date.now(), wbCloudChat(msgs,total,temp,wbId,ctrls), {
