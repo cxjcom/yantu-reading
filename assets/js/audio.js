@@ -18,22 +18,23 @@
   var curScene='home', sceneGains={}, timer=null, nextNote=0, walkIdx=2;
   var lastSceneCheck=0;
 
-  /* ---------- 每场景音乐配置：scale=半音阶度数(以 base 为根的宫调五声),
-     step=平均音符间隔秒, dur=余音秒, hi=音区上移半音数, perc=节奏打点, flute=笛声概率, drone=持续低音频率 ---------- */
+  /* ---------- 每场景音乐配置（v1.11.1 柔化：den 弃用改为必奏、step 缩短、余音拉长
+     使相邻音符尾音交叠成连续线；drone 改为持续低音铺底不再间歇）----------
+     step=音符间隔秒, dur=余音秒, hi=音区上移半音数, perc=节奏打点概率, flute=笛声概率, drone=低音频率 */
   var P=[0,2,4,7,9];                       /* 宫调五声 */
   var SCENES={
-    home:    {base:293.66, step:1.15, dur:1.6, hi:0,  perc:0,   flute:0.06, drone:110.0, den:0.72},
-    reader:  {base:293.66, step:1.85, dur:2.6, hi:-5, perc:0,   flute:0.22, drone:73.4,  den:0.55},
-    quiz:    {base:293.66, step:1.50, dur:1.8, hi:0,  perc:0,   flute:0.10, drone:98.0,  den:0.60},
-    cloze:   {base:329.63, step:1.35, dur:1.7, hi:0,  perc:0,   flute:0.10, drone:98.0,  den:0.62},
-    longread:{base:261.63, step:1.90, dur:2.8, hi:-5, perc:0,   flute:0.20, drone:65.4,  den:0.50},
-    words:   {base:329.63, step:0.85, dur:1.3, hi:7,  perc:0,   flute:0.05, drone:110.0, den:0.75},
-    speak:   {base:293.66, step:1.70, dur:2.2, hi:0,  perc:0,   flute:0.16, drone:98.0,  den:0.55},
-    trans:   {base:293.66, step:1.70, dur:2.2, hi:0,  perc:0,   flute:0.16, drone:98.0,  den:0.55},
-    writing: {base:261.63, step:1.80, dur:2.5, hi:-5, perc:0,   flute:0.18, drone:65.4,  den:0.52},
-    mock:    {base:261.63, step:2.00, dur:2.8, hi:-5, perc:0,   flute:0.10, drone:65.4,  den:0.45},
-    games:   {base:329.63, step:0.50, dur:0.9, hi:7,  perc:0.5, flute:0.04, drone:110.0, den:0.85},
-    profile: {base:246.94, step:2.20, dur:3.0, hi:-7, perc:0,   flute:0.14, drone:61.7,  den:0.42}
+    home:    {base:293.66, step:0.95, dur:2.4, hi:0,  perc:0,   flute:0.10, drone:110.0},
+    reader:  {base:293.66, step:1.35, dur:3.2, hi:-5, perc:0,   flute:0.16, drone:73.4},
+    quiz:    {base:293.66, step:1.15, dur:2.5, hi:0,  perc:0,   flute:0.12, drone:98.0},
+    cloze:   {base:329.63, step:1.10, dur:2.4, hi:0,  perc:0,   flute:0.12, drone:98.0},
+    longread:{base:261.63, step:1.45, dur:3.4, hi:-5, perc:0,   flute:0.14, drone:65.4},
+    words:   {base:329.63, step:0.80, dur:2.0, hi:7,  perc:0,   flute:0.08, drone:110.0},
+    speak:   {base:293.66, step:1.30, dur:2.8, hi:0,  perc:0,   flute:0.14, drone:98.0},
+    trans:   {base:293.66, step:1.30, dur:2.8, hi:0,  perc:0,   flute:0.14, drone:98.0},
+    writing: {base:261.63, step:1.40, dur:3.2, hi:-5, perc:0,   flute:0.14, drone:65.4},
+    mock:    {base:261.63, step:1.55, dur:3.4, hi:-5, perc:0,   flute:0.10, drone:65.4},
+    games:   {base:329.63, step:0.55, dur:1.4, hi:7,  perc:0.4, flute:0.05, drone:110.0},
+    profile: {base:246.94, step:1.70, dur:3.6, hi:-7, perc:0,   flute:0.12, drone:61.7}
   };
 
   function ensureCtx(){
@@ -51,7 +52,7 @@
       }
       wet.buffer=ir;
       var wetGain=ctx.createGain(); wetGain.gain.value=0.28;
-      musicBus=ctx.createGain(); musicBus.gain.value=0.5;
+      musicBus=ctx.createGain(); musicBus.gain.value=0.42;
       musicBus.connect(master); musicBus.connect(wet); wet.connect(wetGain); wetGain.connect(master);
       sfxBus=ctx.createGain(); sfxBus.gain.value=0.55; sfxBus.connect(master);
       SECS.forEach(function(s){ sceneGains[s]=ctx.createGain(); sceneGains[s].gain.value=(s===curScene?1:0); sceneGains[s].connect(musicBus); });
@@ -59,26 +60,25 @@
     }catch(e){ return false; }
   }
 
-  /* ---------- 音色 ---------- */
+  /* ---------- 音色（v1.11.1 柔化：sine 为主圆润音体、慢起音、暗低通、瞬态大幅减弱） ---------- */
   function pluck(dest, freq, t, dur, vel){
     var o1=ctx.createOscillator(), o2=ctx.createOscillator(), g=ctx.createGain(), f=ctx.createBiquadFilter();
-    o1.type='triangle'; o1.frequency.value=freq;
-    o2.type='sine';     o2.frequency.value=freq*2.001;
-    f.type='lowpass'; f.frequency.setValueAtTime(2400,t); f.frequency.exponentialRampToValueAtTime(700,t+dur);
-    var g2=ctx.createGain(); g2.gain.value=0.35; o2.connect(g2);
+    o1.type='sine';     o1.frequency.value=freq;
+    o2.type='triangle'; o2.frequency.value=freq;
+    f.type='lowpass'; f.frequency.setValueAtTime(1500,t); f.frequency.exponentialRampToValueAtTime(500,t+dur);
+    var g2=ctx.createGain(); g2.gain.value=0.18; o2.connect(g2);
     o1.connect(f); g2.connect(f); f.connect(g);
     g.gain.setValueAtTime(0.0001,t);
-    g.gain.exponentialRampToValueAtTime(vel,t+0.012);
+    g.gain.exponentialRampToValueAtTime(vel,t+0.05);          /* 慢起音：柔和无敲击感 */
     g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
     o1.connect(g); o1.start(t); o1.stop(t+dur+0.05);
     o2.connect(g); o2.start(t); o2.stop(t+dur+0.05);
     g.connect(dest);
-    /* 起音噪声瞬态：拨弦质感 */
     var nb=ctx.createBuffer(1,Math.floor(ctx.sampleRate*0.02),ctx.sampleRate), nd=nb.getChannelData(0);
     for(var i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*(1-i/nd.length);
     var ns=ctx.createBufferSource(); ns.buffer=nb;
-    var nf=ctx.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=Math.min(freq*3,5000); nf.Q.value=1.2;
-    var ng=ctx.createGain(); ng.gain.value=vel*0.5;
+    var nf=ctx.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=Math.min(freq*2.2,3800); nf.Q.value=1.4;
+    var ng=ctx.createGain(); ng.gain.value=vel*0.18;
     ns.connect(nf); nf.connect(ng); ng.connect(dest); ns.start(t);
   }
   function flute(dest, freq, t, dur){
@@ -95,15 +95,31 @@
     o.start(t); o.stop(t+dur+0.05); vib.start(t); vib.stop(t+dur+0.05);
     g.connect(dest);
   }
-  function drone(dest, freq, t, dur){
-    var o=ctx.createOscillator(), g=ctx.createGain();
-    o.type='sine'; o.frequency.value=freq;
-    g.gain.setValueAtTime(0.0001,t);
-    g.gain.exponentialRampToValueAtTime(0.045,t+1.2);
-    g.gain.setValueAtTime(0.045,t+dur-1.2);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-    o.start(t); o.stop(t+dur);
-    g.connect(dest);
+  /* 持续低音铺底（v1.11.1 连续感关键）：单振荡器常驻 + 慢 LFO 呼吸起伏，
+     场景切换时 1.2s 淡出旧音换新音 */
+  var droneNode=null;
+  function setDrone(freq){
+    if(!ctx||!musicBus||!started) return;                    /* 音乐已停（stopMusic）时不再生成低音节点 */
+    var t=ctx.currentTime;
+    if(droneNode){
+      try{
+        droneNode.g.gain.cancelScheduledValues(t);
+        droneNode.g.gain.setValueAtTime(droneNode.g.gain.value,t);
+        droneNode.g.gain.linearRampToValueAtTime(0.0001,t+1.2);
+        droneNode.o.stop(t+1.3); droneNode.lfo.stop(t+1.3);
+      }catch(e){}
+    }
+    try{
+      var o=ctx.createOscillator(), g=ctx.createGain(), lfo=ctx.createOscillator(), lg=ctx.createGain();
+      o.type='sine'; o.frequency.value=freq;
+      lfo.type='sine'; lfo.frequency.value=0.07; lg.gain.value=0.013;
+      lfo.connect(lg); lg.connect(g.gain);
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(0.030,t+1.5);
+      o.connect(g); g.connect(musicBus);
+      o.start(t); lfo.start(t);
+      droneNode={o:o,g:g,lfo:lfo};
+    }catch(e){ droneNode=null; }
   }
   function tickPerc(dest, t){
     var nb=ctx.createBuffer(1,Math.floor(ctx.sampleRate*0.03),ctx.sampleRate), nd=nb.getChannelData(0);
@@ -121,19 +137,16 @@
     var horizon=ctx.currentTime+0.55;
     while(nextNote<horizon){
       var t=Math.max(nextNote,ctx.currentTime+0.02);
-      /* 随机游走取五声音阶音，偶尔八度跳跃 */
+      /* 随机游走取五声音阶音，偶尔八度跳跃——每步必奏（v1.11.1 连续感） */
       if(Math.random()<0.22) walkIdx+=(Math.random()<0.5?-1:1)*2;
       else walkIdx+=(Math.random()<0.5?-1:1);
       if(walkIdx<0) walkIdx=2; if(walkIdx>9) walkIdx=7;
       var oct=Math.floor(walkIdx/P.length), deg=walkIdx%P.length;
       var freq=cfg.base*Math.pow(2,(P[deg]+12*oct+cfg.hi)/12);
-      if(Math.random()<cfg.den){
-        pluck(bus,freq,t,cfg.dur,0.20+Math.random()*0.06);
-        if(Math.random()<cfg.flute) flute(bus,freq*2,t+0.05,cfg.dur*0.8);
-      }
+      pluck(bus,freq,t,cfg.dur,0.11+Math.random()*0.05);      /* 音量降档：轻柔铺 */
+      if(Math.random()<cfg.flute) flute(bus,freq*2,t+0.05,cfg.dur*0.8);
       if(cfg.perc&&Math.random()<cfg.perc) tickPerc(bus,t+cfg.step*0.5);
-      if(Math.random()<0.10) drone(bus,cfg.drone,t,cfg.step*6);
-      nextNote=t+cfg.step*(0.75+Math.random()*0.5);
+      nextNote=t+cfg.step*(0.85+Math.random()*0.35);
     }
   }
   function startMusic(){
@@ -142,12 +155,23 @@
     if(started) return;
     started=true; nextNote=ctx.currentTime+0.15;
     timer=setInterval(schedule,160); schedule();
+    setDrone((SCENES[curScene]||SCENES.home).drone);
   }
   function stopMusic(){
     if(timer){ clearInterval(timer); timer=null; }
     started=false;
+    if(droneNode&&ctx){
+      try{
+        var t=ctx.currentTime;
+        droneNode.g.gain.cancelScheduledValues(t);
+        droneNode.g.gain.setValueAtTime(droneNode.g.gain.value,t);
+        droneNode.g.gain.linearRampToValueAtTime(0.0001,t+0.8);
+        droneNode.o.stop(t+0.9); droneNode.lfo.stop(t+0.9);
+      }catch(e){}
+      droneNode=null;
+    }
     if(musicBus&&ctx){ var t=ctx.currentTime; musicBus.gain.cancelScheduledValues(t); musicBus.gain.setValueAtTime(musicBus.gain.value,t); musicBus.gain.linearRampToValueAtTime(0.0001,t+0.8);
-      setTimeout(function(){ if(!started&&musicBus) musicBus.gain.value=0.5; },900); }
+      setTimeout(function(){ if(!started&&musicBus) musicBus.gain.value=0.42; },900); }
   }
 
   /* ---------- 场景切换侦测（同 motion.js 的 style 观察法） ---------- */
@@ -163,6 +187,7 @@
       (sceneGains[curScene]||{}).gain&&sceneGains[curScene].gain.linearRampToValueAtTime(0.0001,t+1.2);
       (sceneGains[found]||{}).gain&&sceneGains[found].gain.linearRampToValueAtTime(1,t+1.2);
       curScene=found; nextNote=Math.min(nextNote,t+0.3);
+      setDrone((SCENES[curScene]||SCENES.home).drone);       /* 低音随场景柔和换音 */
     }else if(found&&found!==curScene){ curScene=found; }
   }
 
