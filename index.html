@@ -8,8 +8,8 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=85">
-<link rel="stylesheet" href="assets/css/motion.css?v=31">
+<link rel="stylesheet" href="assets/css/app.css?v=86">
+<link rel="stylesheet" href="assets/css/motion.css?v=32">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
@@ -397,6 +397,8 @@
   <div class="tbTitle" id="sceneTitle">工作台</div>
   <div class="tbTools">
     <button class="inkBtn" id="fsBtn" title="正文字号">Aa</button>
+    <button class="inkBtn" id="musicBtn" title="场景音乐">🎵</button>
+    <button class="inkBtn" id="sfxBtn" title="按钮音效">🔔</button>
     <button class="inkBtn" id="fxBtn" title="动效开/关（关=省电）">✨</button>
     <button class="inkBtn" id="themeBtn" title="深色 / 浅色">🌙</button>
   </div>
@@ -855,9 +857,10 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=111"></script>
-<script src="assets/js/book.js?v=82"></script>
-<script src="assets/js/motion.js?v=31"></script>
+<script src="assets/js/core.js?v=112"></script>
+<script src="assets/js/book.js?v=83"></script>
+<script src="assets/js/motion.js?v=32"></script>
+<script src="assets/js/audio.js"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){
