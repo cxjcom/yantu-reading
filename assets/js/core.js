@@ -1435,6 +1435,20 @@ $('#epTestBtn').onclick=async function(){
   }else{
     lines.push('ℹ️ 未配置自定义接口——免费通道全挂时无退路，建议在上方注册一个（智谱 GLM-4-Flash 免费）');
   }
+  /* 最近一次生成的逐通道失败记录（v1.11.10，手机无控制台时的自查入口） */
+  try{
+    const dg=JSON.parse(localStorage.getItem('yt_aidiag')||'[]');
+    if(Array.isArray(dg)&&dg.length){
+      const last=dg[dg.length-1];
+      const ago=Math.round((Date.now()-last.t)/1000);
+      lines.push('🔍 最近一次生成（'+(ago<90?ago+' 秒前':Math.round(ago/60)+' 分钟前')+'）逐通道结果：');
+      (last.steps||[]).forEach(function(st){
+        lines.push('　└ '+st.ep+'：'+st.st+'（'+st.ms+'ms'+(st.x?' · '+st.x:'')+'）');
+      });
+    }else{
+      lines.push('🔍 最近一次生成：无通道记录（可能直接走了本地引擎或尚未生成过）');
+    }
+  }catch(e){}
   box.innerHTML=lines.join('<br>');
 };
 Array.prototype.forEach.call(document.querySelectorAll('.aiPreset'), function(b){
