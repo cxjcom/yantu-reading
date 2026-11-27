@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>研途阅读 · 手机诊断</title>
+<style>
+  body{background:#16130f;color:#e8ddc8;font-family:monospace;font-size:13px;padding:16px;line-height:1.8;word-break:break-all;}
+  h1{font-size:16px;color:#d4a94f;}
+  .ok{color:#7bc96f}.bad{color:#e07a5f}.warn{color:#d4a94f}
+  pre{white-space:pre-wrap;background:#0d0a06;padding:10px;border-radius:8px;border:1px solid #3a2f1e;}
+  button{background:#d4a94f;border:0;border-radius:6px;padding:10px 18px;font-size:14px;font-weight:700;color:#16130f;}
+  #r{min-height:40vh}
+</style>
+</head>
+<body>
+<h1>🔍 研途阅读 · 手机诊断</h1>
+<p>自动测试全部通道中，请稍候…（结果可一键复制发给开发者）</p>
+<button id="cp">📋 一键复制结果</button>
+<pre id="r">测试中…</pre>
+<script>
+(function(){
+  var L=[], t0=Date.now();
+  function add(s,cls){ L.push(s); document.getElementById('r').innerHTML=L.map(function(x){return x;}).join('\n'); }
+  function mask(k){ k=String(k||''); return k?(k.slice(0,6)+'…(共'+k.length+'位)'):'(空)'; }
+  function run(){
+    /* 1. 环境 */
+    var ua=navigator.userAgent;
+    add('【0 · 环境】');
+    add('UA: '+ua);
+    add('内核判定: '+( /MQQBrowser|QQBrowser|X5/i.test(ua)?'⚠️ X5/QQ 内核':(/MicroMessenger/i.test(ua)?'微信内置':(/Chrome|Chromium/i.test(ua)?'Chromium 系':'其他')) ));
+    add('核数/内存: '+(navigator.hardwareConcurrency||'?')+'核 / '+(navigator.deviceMemory||'?')+'GB');
+    /* 2. SW 与版本 */
+    add('');
+    add('【1 · SW 与版本】');
+    if(navigator.serviceWorker&&navigator.serviceWorker.controller){
+      add('SW 控制中: 是（可能存在缓存滞后）');
+    }else{ add('SW 控制中: 否'); }
+    try{
+      var ks=Object.keys(window.caches?{}:{});
+    }catch(e){}
+    var p1=navigator.serviceWorker&&navigator.serviceWorker.getRegistrations?navigator.serviceWorker.getRegistrations().then(function(rs){
+      add('SW 注册数: '+rs.length+(rs[0]?(' · active='+!!rs[0].active):''));
+    }).catch(function(){add('SW 注册: 读取失败');}):Promise.resolve();
+    var p2=fetch('./index.html?diag='+Date.now()).then(function(r){return r.text()}).then(function(t){
+      var m=t.match(/core\.js\?v=(\d+)/); var sw=t.match(/yt-pwa-v(\d+)/);
+      add('线上 index 应为: core v'+(m?m[1]:'?'));
+    }).catch(function(){add('index 拉取失败');});
+    /* 3. 本地配置 */
+    add('');
+    add('【2 · 本机 AI 配置】');
+    var cfg={}; try{ cfg=JSON.parse(localStorage.getItem('yt_aicfg')||'{}'); }catch(e){}
+    add('接口地址: '+(cfg.url||'(空)'));
+    add('模型: '+(cfg.model||'(空)'));
+    add('Key: '+mask(cfg.key));
+    var pv=[]; try{ pv=JSON.parse(localStorage.getItem('yt_providers')||'[]'); }catch(e){}
+    add('已存方案: '+pv.length+' 套（'+pv.map(function(p){return p.name||'?';}).join(' / ')+'）');
+    /* 4. 最近一次生成诊断 */
+    add('');
+    add('【3 · 最近一次生成记录】');
+    try{
+      var dg=JSON.parse(localStorage.getItem('yt_aidiag')||'[]');
+      if(Array.isArray(dg)&&dg.length){
+        var last=dg[dg.length-1];
+        add('距今 '+Math.round((Date.now()-last.t)/1000)+' 秒:');
+        (last.steps||[]).forEach(function(st){ add('  └ '+st.ep+'：'+st.st+'（'+st.ms+'ms'+(st.x?' · '+st.x:'')+'）'); });
+      }else add('（无记录——可能未生成过或走了本地引擎）');
+    }catch(e){ add('读取失败: '+e); }
+    /* 5. 直连 DeepSeek 实测 */
+    add('');
+    add('【4 · 直连 DeepSeek 实测】');
+    var dl=Date.now();
+    var p3=fetch('https://api.deepseek.com/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer sk-diag-probe'},
+      body:'{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}]}'}).then(function(r){
+        add((r.status===401?'✅ 直连通（假 Key 得 401=服务可达，被拦可能性排除）':'⚠️ 直连异常: HTTP '+r.status)+'（'+(Date.now()-dl)+'ms）');
+      }).catch(function(e){
+        add('❌ 直连失败: '+String(e&&e.message||e)+'（'+(Date.now()-dl)+'ms）——手机网络拦截实锤，中转应接管');
+      });
+    /* 6. 本机配置真实调用（完全模拟生成） */
+    var p4=Promise.resolve();
+    if(cfg.url){
+      add('');
+      add('【5 · 用本机 Key 直调你的 API】');
+      p4=fetch(cfg.url,{method:'POST',headers:(function(){var h={'Content-Type':'application/json'}; if(cfg.key) h['Authorization']='Bearer '+cfg.key; return h;})(),
+        body:JSON.stringify({model:cfg.model||'deepseek-chat',messages:[{role:'user',content:'hi'}],max_tokens:5})}).then(function(r){
+          return r.text().then(function(tx){
+            var okr=r.ok&&tx.length>2;
+            add((okr?'✅':'❌')+' 本机 API 直调: HTTP '+r.status+'（'+(Date.now()-dl)+'ms）'+(okr?' — Key 与账户正常':' — '+String(tx).slice(0,140)));
+          });
+        }).catch(function(e){
+          add('❌ 本机 API 直调失败: '+String(e&&e.message||e)+'（'+(Date.now()-dl)+'ms）——CORS/运营商拦截');
+        });
+    }
+    /* 7. 中转实测 */
+    add('');
+    add('【6 · 中转陪跑实测】');
+    var p5=fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify((function(){ var b={model:'diag',messages:[{role:'user',content:'hi'}]}; if(cfg.url) b.ep={url:cfg.url,model:cfg.model||'',key:cfg.key||''}; return b; })())}).then(function(r){
+        return r.text().then(function(tx){
+          var okr=r.ok&&tx.indexOf('"content"')>=0;
+          add((r.ok&&okr?'✅':'⚠️')+' 中转: HTTP '+r.status+'（'+(Date.now()-dl)+'ms）'+(r.ok?' — 中转可达':(' — '+String(tx).slice(0,160))));
+        });
+      }).catch(function(e){
+        add('❌ 中转失败: '+String(e&&e.message||e));
+      });
+    Promise.all([p1,p2,p3,p4,p5]).then(function(){
+      add('');
+      add('—— 诊断完毕 '+new Date().toLocaleTimeString()+' ——');
+      document.getElementById('r').innerHTML=L.map(function(x){
+        return x.replace(/✅/g,'<span class="ok">✅</span>').replace(/❌/g,'<span class="bad">❌</span>').replace(/⚠️/g,'<span class="warn">⚠️</span>');
+      }).join('\n');
+    });
+  }
+  run();
+  document.getElementById('cp').onclick=function(){
+    var txt=L.join('\n');
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){document.getElementById('cp').textContent='✅ 已复制';},function(){fallback();}); }
+    else fallback();
+    function fallback(){ var ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');document.getElementById('cp').textContent='✅ 已复制';}catch(e){} document.body.removeChild(ta); }
+  };
+})();
+</script>
+</body>
+</html>
