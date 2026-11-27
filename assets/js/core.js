@@ -1838,13 +1838,14 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     /* moonshot 已移出（v1.10.32）：实测 Kimi 支持 CORS 直连（204+ACAO），恒走中转属冗余双发；
        直连万一失败仍有 CUSTOM_FAIL 一小时内自愈兜底。
        tencentmaas 加入（v1.10.33）：TokenHub 接口预检 405 无 CORS，须走中转代调。
-       触摸设备恒陪跑（v1.11.6，用户报告手机 DeepSeek 生成失败）：手机运营商常拦外部
-       AI 域名——直连失败时中转当场接管，不再等下一次生成才自愈；桌面 pointer:fine 不受影响 */
+       触摸设备恒陪跑已撤（v1.11.13）：手机诊断页实测（2026-11-28）直连探测 336ms 通过、
+       运营商并未拦截——恒陪跑反而让每次生成多打一发中转请求，连点几次就把
+       中转限流（15/分）打爆，后续请求全部秒拒 429=「直接跳过生成」。自愈式
+       （CUSTOM_FAIL 一小时内加入）保留，真被拦时下一次生成内即接管 */
     const knownNoCors=/bigmodel|volcengine|siliconflow|hunyuan|tencentmaas/i.test(cfg.url);
-    const isTouch=(typeof matchMedia!=='undefined'&&matchMedia('(pointer:coarse)').matches)||(typeof navigator!=='undefined'&&'ontouchstart' in window);
     const h0=epHealth();
     const recentFail=h0.CUSTOM_FAIL && (Date.now()-h0.CUSTOM_FAIL)<3600000;
-    if((knownNoCors || recentFail || isTouch) && typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){
+    if((knownNoCors || recentFail) && typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){
       tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', cfg.model||'', '', Math.min(total,175000), (function(){ const ep={url:cfg.url, model:cfg.model||'', key:cfg.key||''}; const mt=ytMaxTok(); if(mt) ep.maxTok=mt; return {ep:ep}; })()), {
         win:function(){ epHealthSet('RELAY_OK', Date.now()); },
         lose:function(){ epHealthSet('RELAY_FAIL', Date.now()); }
