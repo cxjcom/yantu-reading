@@ -468,3 +468,8 @@ html.motion-off #mFilm,
 html.motion-off #mArt,
 html.motion-off .mAmbient,
 html.motion-off .mSil{display:none !important;}
+
+/* 触摸防误触（v1.11.7）：装饰层在所有内核下都不得拦截触摸 */
+.mAmbient,.mPetal,.mSil{pointer-events:none !important;}
+/* X5/QQ 内核（pointer-events:none 会失效）：装饰层硬隐藏 */
+html.x5 #mFilm,html.x5 #mArt,html.x5 #mFx,html.x5 .mAmbient,html.x5 .mSil{display:none !important;}

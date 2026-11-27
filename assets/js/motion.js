@@ -512,7 +512,12 @@
   /* ---------- 动效开关（2026-11-22 体检修复）：yt_fx=1 不铺常驻装饰层 ----------
      胶片颗粒/花瓣/剪影/Rays 是全站常驻 GPU 重绘，低端安卓发热耗电掉帧的主因；
      关掉的只是「常驻税」，交互式入场动画（arm* 系列）保留。core.js 顶栏 ✨ 按钮触发 */
-  function fxOff(){ try{ return localStorage.getItem('yt_fx')==='1'; }catch(e){ return false; } }
+  /* X5/QQ 内核检测（v1.11.7，用户报告 QQ 浏览器手机端无法滑动）：X5 对 fullscreen
+     fixed 层的 pointer-events:none 存在失效 bug——胶片/花瓣/氛围层会吞掉全部触摸，
+     页面划不动点不灵。X5 上强制静默模式：装饰层全部不铺，html.x5 类供 CSS 兜底隐藏 */
+  var IS_X5=/MQQBrowser|QQBrowser|X5/i.test(navigator.userAgent);
+  if(IS_X5 && document.documentElement.classList) document.documentElement.classList.add('x5');
+  function fxOff(){ try{ return localStorage.getItem('yt_fx')==='1' || IS_X5; }catch(e){ return IS_X5; } }
   function plantConstantLayers(){ ensureFilm(); ensureArt(); injectSilhouettes(); plantAmbient(); }
   function removeConstantLayers(){
     const f=document.getElementById('mFilm'); if(f) f.remove();
