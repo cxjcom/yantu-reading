@@ -473,3 +473,6 @@ html.motion-off .mSil{display:none !important;}
 .mAmbient,.mPetal,.mSil{pointer-events:none !important;}
 /* X5/QQ 内核（pointer-events:none 会失效）：装饰层硬隐藏 */
 html.x5 #mFilm,html.x5 #mArt,html.x5 #mFx,html.x5 .mAmbient,html.x5 .mSil{display:none !important;}
+
+/* 低端机自动轻量（v1.11.8）：与 html.x5 同款硬隐藏——滚动冻结元凶全部下架 */
+html.lite #mFilm,html.lite #mArt,html.lite #mFx,html.lite .mAmbient,html.lite .mSil{display:none !important;}

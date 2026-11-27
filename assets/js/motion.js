@@ -517,7 +517,16 @@
      页面划不动点不灵。X5 上强制静默模式：装饰层全部不铺，html.x5 类供 CSS 兜底隐藏 */
   var IS_X5=/MQQBrowser|QQBrowser|X5/i.test(navigator.userAgent);
   if(IS_X5 && document.documentElement.classList) document.documentElement.classList.add('x5');
-  function fxOff(){ try{ return localStorage.getItem('yt_fx')==='1' || IS_X5; }catch(e){ return IS_X5; } }
+  /* 低端机自动轻量（v1.11.8，用户报告手机卡顿+概率性划不动）：胶片颗粒全屏 0.9s 重绘、
+     花瓣×16 常驻等动画在低端渲染线程上是滚动冻结的元凶——核数≤4 或内存≤4GB 的设备
+     自动静默（同 X5 处理），html.lite 类供 CSS 兜底隐藏。桌面/旗舰机不受影响 */
+  var IS_LOWEND=false;
+  try{
+    var hc=navigator.hardwareConcurrency||8, dm=navigator.deviceMemory||8;
+    IS_LOWEND=(hc<=4||dm<=4);
+  }catch(e){}
+  if(IS_LOWEND && document.documentElement.classList) document.documentElement.classList.add('lite');
+  function fxOff(){ try{ return localStorage.getItem('yt_fx')==='1' || IS_X5 || IS_LOWEND; }catch(e){ return IS_X5||IS_LOWEND; } }
   function plantConstantLayers(){ ensureFilm(); ensureArt(); injectSilhouettes(); plantAmbient(); }
   function removeConstantLayers(){
     const f=document.getElementById('mFilm'); if(f) f.remove();
