@@ -1823,11 +1823,14 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
     }));
     /* moonshot 已移出（v1.10.32）：实测 Kimi 支持 CORS 直连（204+ACAO），恒走中转属冗余双发；
        直连万一失败仍有 CUSTOM_FAIL 一小时内自愈兜底。
-       tencentmaas 加入（v1.10.33）：TokenHub 接口预检 405 无 CORS，须走中转代调 */
+       tencentmaas 加入（v1.10.33）：TokenHub 接口预检 405 无 CORS，须走中转代调。
+       触摸设备恒陪跑（v1.11.6，用户报告手机 DeepSeek 生成失败）：手机运营商常拦外部
+       AI 域名——直连失败时中转当场接管，不再等下一次生成才自愈；桌面 pointer:fine 不受影响 */
     const knownNoCors=/bigmodel|volcengine|siliconflow|hunyuan|tencentmaas/i.test(cfg.url);
+    const isTouch=(typeof matchMedia!=='undefined'&&matchMedia('(pointer:coarse)').matches)||(typeof navigator!=='undefined'&&'ontouchstart' in window);
     const h0=epHealth();
     const recentFail=h0.CUSTOM_FAIL && (Date.now()-h0.CUSTOM_FAIL)<3600000;
-    if((knownNoCors || recentFail) && typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){
+    if((knownNoCors || recentFail || isTouch) && typeof location!=='undefined' && location.protocol==='https:' && location.hostname.indexOf('pages.dev')>=0){
       tasks.push(wrap('中转', t0, fetchTask('中转', '/api/ai', cfg.model||'', '', Math.min(total,175000), (function(){ const ep={url:cfg.url, model:cfg.model||'', key:cfg.key||''}; const mt=ytMaxTok(); if(mt) ep.maxTok=mt; return {ep:ep}; })()), {
         win:function(){ epHealthSet('RELAY_OK', Date.now()); },
         lose:function(){ epHealthSet('RELAY_FAIL', Date.now()); }
@@ -3922,6 +3925,16 @@ if('serviceWorker' in navigator && (location.protocol==='https:' || ['localhost'
   /* 长驻页面每 30 分钟检查一次 SW 更新 */
   setInterval(function(){ navigator.serviceWorker.getRegistration().then(function(r){ if(r) r.update().catch(function(){}); }); }, 30*60*1000);
 }
+/* 滚动锁死全局看门狗（v1.11.6，用户报告手机端依旧偶发）：任何路径只要留下
+   body.splash-lock 而 #splash 节点已不存在——1.5s 内强制解锁，与 splash 自身
+   的三重保险互为独立兜底（旧版本混跑/SW 翻新中间态等一切来源都盖住） */
+setInterval(function(){
+  try{
+    if(document.body && document.body.classList.contains('splash-lock') && !document.getElementById('splash')){
+      document.body.classList.remove('splash-lock');
+    }
+  }catch(e){}
+},1500);
 
 /* ---------- 安装到手机桌面（引导面板 + 我的手动入口共用） ---------- */
 var ytPwa={deferred:null,waiting:false,noNative:false};
