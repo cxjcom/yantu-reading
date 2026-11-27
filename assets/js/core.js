@@ -1805,6 +1805,45 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
         return (j.choices&&j.choices[0]&&j.choices[0].message)? j.choices[0].message.content : (j.content||''); })
       .catch(function(e){ clearTimeout(tmr); throw e; });
   };
+  /* 流式版本（v1.11.14 手机专项）：蜂窝网络对 20-30s 非流式长请求经常中途掐断——
+     stream:true 让字节持续流动保活连接；超时/中断时已累积的半截文本照样返回（extractJSON 抢救）。
+     SSE 聚合解析与 wbCloudChat 同构；AI_CANCEL 支持在流中随时取消 */
+  const fetchStreamTask=function(name,url,model,key,tm,extra){
+    const msStart=Date.now();
+    const ctrl=new AbortController(); ctrls.push(ctrl); AI_CTRLS.push(ctrl);
+    if(AI_CTRLS.length>60) AI_CTRLS=AI_CTRLS.slice(-60);
+    const tmr=setTimeout(function(){ try{ctrl.abort();}catch(e){} }, tm);
+    const headers={'Content-Type':'application/json'};
+    if(key) headers['Authorization']='Bearer '+key;
+    const payload=Object.assign({model:model,messages:msgs,temperature:temp,stream:true}, extra||{});
+    const mt=ytMaxTok(); if(mt) payload.max_tokens=mt;
+    let sseOut='';
+    return fetch(url,{method:'POST',signal:ctrl.signal,headers:headers,body:JSON.stringify(payload)})
+      .then(function(res){
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        if(!res.body||!res.body.getReader) return res.json().then(function(j){ return (j.choices&&j.choices[0]&&j.choices[0].message)?j.choices[0].message.content:(j.content||''); });
+        const reader=res.body.getReader(), dec=new TextDecoder();
+        let buf='';
+        function pump(){
+          return reader.read().then(function(chunk){
+            if(chunk.done){ clearTimeout(tmr); return sseOut; }
+            buf+=dec.decode(chunk.value,{stream:true});
+            let idx;
+            while((idx=buf.indexOf('\n'))>=0){
+              const line=buf.slice(0,idx).trim(); buf=buf.slice(idx+1);
+              if(line.indexOf('data:')!==0) continue;
+              const pl=line.slice(5).trim();
+              if(pl==='[DONE]'){ clearTimeout(tmr); return sseOut; }
+              try{ const j=JSON.parse(pl); const d=j.choices&&j.choices[0]&&j.choices[0].delta; if(d&&d.content) sseOut+=d.content; }catch(e){}
+            }
+            if(AI_CANCEL){ try{ctrl.abort();}catch(e){} return sseOut; }
+            return pump();
+          });
+        }
+        return pump().catch(function(e){ clearTimeout(tmr); if(sseOut) return sseOut; throw e; });
+      })
+      .catch(function(e){ clearTimeout(tmr); if(sseOut) return sseOut; throw e; });
+  };
   const tasks=[];
   const t0=Date.now();
   let raceStarted=false;
@@ -1832,7 +1871,8 @@ async function aiChat(sys,usr,timeoutMs,minLen,opts){
      中转代调兄弟路只在两种情况下加入：a) 已知无 CORS 的服务商（bigmodel 等直连必败）；
      b) 直连一小时内刚失败过（自愈式兜底）。有 CORS 的端点（如 DeepSeek）不白发服务端调用 */
   if(cfg.url){
-    tasks.push(wrap('自定义', t0, fetchTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000)), {
+    /* 自定义通道走流式（v1.11.14）：手机蜂窝网对非流式长请求中途掐断是生成失败主因 */
+    tasks.push(wrap('自定义', t0, fetchStreamTask('自定义', cfg.url, cfg.model||'gpt-4o-mini', cfg.key||'', Math.min(total,120000)), {
       lose:function(){ epHealthSet('CUSTOM_FAIL', Date.now()); }
     }));
     /* moonshot 已移出（v1.10.32）：实测 Kimi 支持 CORS 直连（204+ACAO），恒走中转属冗余双发；
