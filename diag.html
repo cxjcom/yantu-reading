@@ -42,6 +42,9 @@
     var p1=navigator.serviceWorker&&navigator.serviceWorker.getRegistrations?navigator.serviceWorker.getRegistrations().then(function(rs){
       add('SW 注册数: '+rs.length+(rs[0]?(' · active='+!!rs[0].active):''));
     }).catch(function(){add('SW 注册: 读取失败');}):Promise.resolve();
+    if(window.caches){ caches.keys().then(function(ks){
+      add('**手机实际运行版本（缓存名）: '+(ks.join(', ')||'无')+'** ← v149=v1.11.8 / v150=v1.11.9 / v151=v1.11.10 / v152=v1.11.11 / v153=v1.11.14');
+    }).catch(function(){add('缓存名: 读取失败');}); }
     var p2=fetch('./index.html?diag='+Date.now()).then(function(r){return r.text()}).then(function(t){
       var m=t.match(/core\.js\?v=(\d+)/); var sw=t.match(/yt-pwa-v(\d+)/);
       add('线上 index 应为: core v'+(m?m[1]:'?'));
@@ -89,6 +92,40 @@
           });
         }).catch(function(e){
           add('❌ 本机 API 直调失败: '+String(e&&e.message||e)+'（'+(Date.now()-dl)+'ms）——CORS/运营商拦截');
+        });
+    }
+    /* 6.5 流式生成模拟实测（v1.11.14 新链路）：stream:true 真跑一次，统计块数/字数/耗时 */
+    if(cfg.url&&cfg.key){
+      add('');
+      add('【5.5 · 流式生成实测（新链路）】');
+      var st0=Date.now(), chunks=0, chars=0, firstByte=0;
+      var p45=fetch(cfg.url,{method:'POST',headers:(function(){var h={'Content-Type':'application/json'}; if(cfg.key) h['Authorization']='Bearer '+cfg.key; return h;})(),
+        body:JSON.stringify({model:cfg.model||'deepseek-chat',messages:[{role:'user',content:'写一句20字以内的诗'}],stream:true,max_tokens:60})}).then(function(r){
+          if(!r.ok) return r.text().then(function(tx){ add('❌ 流式: HTTP '+r.status+' — '+String(tx).slice(0,120)); });
+          if(!r.body||!r.body.getReader) { add('⚠️ 内核不支持 response.body 流读取'); return; }
+          var reader=r.body.getReader(), dec=new TextDecoder(), buf='';
+          function pump(){
+            return reader.read().then(function(ch){
+              if(ch.done){
+                add((chars>0?'✅':'⚠️')+' 流式结束: 收到 '+chunks+' 块 / '+chars+' 字（'+(Date.now()-st0)+'ms，首块 '+(firstByte||Date.now()-st0)+'ms）');
+                return;
+              }
+              if(!firstByte) firstByte=Date.now()-st0;
+              buf+=dec.decode(ch.value,{stream:true});
+              var idx;
+              while((idx=buf.indexOf('\n'))>=0){
+                var line=buf.slice(0,idx).trim(); buf=buf.slice(idx+1);
+                if(line.indexOf('data:')!==0) continue;
+                var pl=line.slice(5).trim();
+                if(pl==='[DONE]'){ add((chars>0?'✅':'⚠️')+' 流式结束: 收到 '+chunks+' 块 / '+chars+' 字（'+(Date.now()-st0)+'ms）'); return; }
+                try{ var j=JSON.parse(pl); var d=j.choices&&j.choices[0]&&j.choices[0].delta; if(d&&d.content){ chunks++; chars+=d.content.length; } }catch(e){}
+              }
+              return pump();
+            });
+          }
+          return pump().catch(function(e){ add('❌ 流式中断: '+String(e&&e.message||e)+'（已收 '+chunks+' 块 '+chars+' 字）'); });
+        }).catch(function(e){
+          add('❌ 流式请求失败: '+String(e&&e.message||e)+'（'+(Date.now()-st0)+'ms）');
         });
     }
     /* 7. 中转实测 */
