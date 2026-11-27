@@ -4253,7 +4253,23 @@ function audioCtx(){
     if(done){ clearInterval(heartbeat); return; }
     if(!sp.parentNode || Date.now()-started>12000){ clearInterval(heartbeat); end(); }
   }, 1000);
-  function skip(){ if(done) return; done=true; sp.classList.add('spSkip'); setTimeout(end, 420); }
+  /* 跳过（v1.11.9 修复真锁死 Bug）：旧逻辑先置 done=true 再 setTimeout(end,420)——
+     而 end() 开头 if(done) return，导致跳过路径 end() 永不执行：splash 节点不移除、
+     body.splash-lock 永不解锁（.spSkip 的 CSS 只是把它藏看不见，overflow:hidden 还在
+     →整页锁滚，按钮可点但划不动）。现改为：立即解锁+隐藏 splash，380ms 后由本闭包
+     直接移除节点并强制重排+滚动微推（X5 等内核 overflow 解除后需踢一脚才恢复滚动） */
+  function skip(){
+    if(done) return;
+    done=true;
+    try{ sp.style.pointerEvents='none'; }catch(e){}
+    bl(false);                                   /* 立即解锁滚动，不等淡出 */
+    try{ document.body.style.overflow=''; }catch(e){}
+    sp.classList.add('spSkip');
+    setTimeout(function(){
+      try{ if(sp.parentNode) sp.parentNode.removeChild(sp); }catch(e){}
+      try{ void document.body.offsetHeight; window.scrollTo(0,1); setTimeout(function(){ try{ window.scrollTo(0,0); }catch(e){} },80); }catch(e){}
+    }, 380);
+  }
   sp.addEventListener('animationend', function(ev){ if(ev.animationName==='spExit') end(); });
   sp.addEventListener('click', skip);
   ['keydown','wheel','touchstart'].forEach(function(t){
