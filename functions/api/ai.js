@@ -18,21 +18,22 @@ function json(obj, status) {
   });
 }
 
-/* ========== 安全防护（2026-11-22 体检修复，用户要求）==========
-   1) Origin 校验：浏览器 POST 必带 Origin 头——只放行本站域名；curl/脚本无 Origin 一律 403，
-      堵死「匿名白嫖 Workers AI 配额」与「开放中转当匿名代理」两个滥用面。
-      原注释「无限流（用户要求）」语境是不限自家使用——公网匿名滥用面未设防，现补上。
+/* ========== 安全防护（2026-11-22 体检修复；2026-11-28 v1.11.11 放宽无 Origin）==========
+   1) Origin 校验：带 Origin 的请求只放行本站域名（外域 403）；**无 Origin 放行**——
+      X5/QQ 等部分内核 POST 不带 Origin，此前一刀切 403 会掐死手机中转陪跑（用户实测手机
+      DeepSeek 无法生成的候选病因）。放宽后的滥用面评估：Workers AI 已丢弃（v1.10.31）、
+      ep 代调需调用者自己的 Key、匿名无 Key 只能蹭第三方 Pollinations——且仍有每 IP 双窗限流封顶。
    2) 每 IP 双窗限流（内存近似，跨 isolate 不精确但足以挡脚本刷量）：
-      每分钟 10 次 + 每小时 80 次。自家正常用法：单次生成 1-2 个请求（竞速双路），余量充足。 */
+      每分钟 15 次 + 每小时 240 次（v1.11.11 放宽：兼容运营商 CGNAT 共享出口 IP 的多用户）。 */
 function originAllowed(request) {
   const origin = request.headers.get('origin') || '';
-  if (!origin) return false;
+  if (!origin) return true;                                             /* 无 Origin（X5 等）：放行，限流兜底 */
   try {
     const o = new URL(origin);
-    if (o.origin === new URL(request.url).origin) return true;            /* 同源（预览域/自定义域自动覆盖） */
+    if (o.origin === new URL(request.url).origin) return true;          /* 同源（预览域/自定义域自动覆盖） */
     const h = o.hostname;
     if (h === 'yantu-reading.pages.dev' || h.endsWith('.yantu-reading.pages.dev')) return true;
-    return false;
+    return false;                                                       /* 伪造外域 Origin：仍拒 */
   } catch (e) { return false; }
 }
 const RL = (globalThis.__ytRL || (globalThis.__ytRL = new Map()));
@@ -43,7 +44,7 @@ function rateLimited(ip) {
   if (now - e.min0 > 60000) { e.min0 = now; e.min = 0; }
   e.min++; e.hour++;
   if (RL.size > 5000) { for (const k of RL.keys()) { const v = RL.get(k); if (v && now - v.win0 > 3600000) RL.delete(k); } }
-  return e.min > 10 || e.hour > 80;
+  return e.min > 15 || e.hour > 240;
 }
 
 export async function onRequestPost(context) {
