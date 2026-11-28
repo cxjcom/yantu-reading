@@ -1541,12 +1541,15 @@ function renderPassage(p){
   $('#titleEn').textContent = p.titleEn;
   $('#titleCn').textContent = p.titleCn;
   const art=$('#article'); art.innerHTML='';
-  p.paras.forEach(para=>{
+  p.paras.forEach((para,pi)=>{
     const sec=document.createElement('section'); sec.className='para';
-    para.forEach(s=>{
+    para.forEach((s,si)=>{
       const div=document.createElement('div'); div.className='sent';
+      /* 朱砂首字下沉（v1.12.0）：仅全文第一句，字母开头才套 */
+      let enHtml=gmEsc(s.en);
+      if(pi===0&&si===0&&/^[A-Za-z]/.test(enHtml)) enHtml=enHtml.replace(/^([A-Za-z])/,'<span class="dropcap">$1</span>');
       div.innerHTML =
-        `<p class="en">${gmEsc(s.en)}</p>`+
+        `<p class="en">${enHtml}</p>`+
         `<div class="cnwrap"><p class="cn">${gmEsc(s.cn)}</p>${s.g?`<span class="gtag">${gmEsc(s.g)}</span>`:''}</div>`;
       sec.appendChild(div);
     });

@@ -204,10 +204,11 @@ button:focus-visible, input:focus-visible, summary:focus-visible{
 }
 .chipBtn:active{transform:scale(.95);}
 .chipBtn.on{
-  border-color:var(--cinnabar); color:var(--cinnabar);
-  background:rgba(181,56,47,.08); font-weight:700;
-  box-shadow:inset 0 0 0 1px rgba(181,56,47,.25);
+  background:var(--cinnabar); color:#f5efe0; border-color:var(--cinnabar);
+  font-weight:700; transform:rotate(-1.2deg);
+  box-shadow:inset 0 0 0 1.5px rgba(245,239,224,.5), 0 2px 10px rgba(181,56,47,.28);
 }
+.chipBtn.on:active{transform:rotate(-1.2deg) scale(.95);}
 
 .inkLabel{
   display:flex; align-items:center; gap:8px;
@@ -299,7 +300,13 @@ details.cfg[open] summary::after{transform:rotate(180deg);}
 .sceneCount{font-size:13px; color:var(--muted); font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:1px;}
 
 .wBarWrap{height:5px;background:var(--line);border-radius:99px;margin:0 2px 20px;overflow:hidden;}
-#wBar{height:100%;width:0;background:linear-gradient(90deg,var(--cinnabar),var(--gold));border-radius:99px;transition:width .25s;}
+/* 水墨墨条（v1.12.0）：深墨渐变 + 笔锋亮端 + 内渗阴影 */
+#wBar{height:100%;width:0;position:relative;
+  background:linear-gradient(90deg,#141210,#3a362f 55%,#575244);
+  border-radius:99px 4px 4px 99px;transition:width .35s ease;
+  box-shadow:inset 0 0 5px rgba(0,0,0,.55), 0 0 0 1px rgba(212,169,79,.3), 1px 0 8px rgba(40,34,24,.3);}
+#wBar::after{content:"";position:absolute;right:3px;top:14%;bottom:14%;width:7px;border-radius:99px;
+  background:radial-gradient(ellipse at center,rgba(240,234,220,.55),transparent 72%);}
 #qBar{height:100%;width:0;background:linear-gradient(90deg,var(--cinnabar),var(--gold));border-radius:99px;transition:width .25s;}
 
 /* 卡片 */
@@ -1619,3 +1626,10 @@ body.splash-lock{overflow:hidden;}
 .glBtn:hover{background:var(--paper);}
 .glBtn.on{border-color:var(--cinnabar); color:var(--cinnabar); background:rgba(181,56,47,.08);}
 .glCard .wBtn.slim{margin-top:10px;}
+
+/* 朱砂首字下沉（v1.12.0）：阅读页全文第一句的首字母 */
+.dropcap{
+  float:left; font-size:2.7em; line-height:.88;
+  padding:.03em .12em 0 0; margin:0;
+  color:var(--cinnabar); font-family:var(--serif); font-weight:700;
+}
