@@ -2810,6 +2810,8 @@ function openCloze(lv){
   window.scrollTo(0,0);
 }
 async function buildClozePassage(){
+  /* 填空页 AI/本地切换 seg 状态同步（v1.12.1） */
+  Array.prototype.forEach.call(document.querySelectorAll('#clozeAiSeg button'),function(b){ b.classList.toggle('on',(b.dataset.v==='ai')===AI_MODE); });
   if(AI_MODE && AI_BUSY){ showToast('有 AI 任务进行中，请稍候…'); return; }
   if(AI_MODE){
     AI_BUSY=true; aiLoadingShow('🌐 AI 生成选词填空');
@@ -3065,6 +3067,16 @@ function gradeAICloze(){
   window.scrollTo(0,0);
 }
 $('#cNew').onclick=function(){ buildClozePassage(); window.scrollTo(0,0); };
+/* 填空页 AI/本地切换（v1.12.1）：与工作台 aiSeg 共用全局 AI_MODE，切完即重生成 */
+$('#clozeAiSeg').addEventListener('click',function(e){
+  var b=e.target.closest('button'); if(!b) return;
+  var wantAI=(b.dataset.v==='ai');
+  if(wantAI===AI_MODE){ showToast(wantAI?'已是 AI 生成模式':'已是本地离线模式'); buildClozePassage(); return; }
+  AI_MODE=wantAI; saveSettings();
+  Array.prototype.forEach.call(document.getElementById('aiSeg').children,function(x){ x.classList.toggle('on',(x.dataset.v==='ai')===AI_MODE); });
+  showToast(wantAI?'🌐 填空切换：AI 生成':'📦 填空切换：本地离线');
+  buildClozePassage();
+});
 $('#clozeLevel').addEventListener('click', function(e){
   const b=e.target.closest('button'); if(!b || b.dataset.v===clozeLevel) return;
   openCloze(b.dataset.v);
@@ -3672,6 +3684,11 @@ function startGroup(){
 function renderWord(){
   if(wIdx>=wGroup.length){ renderGroupDone(); return; }
   const cur=wGroup[wIdx];
+  /* 词汇解说盒复位（v1.12.1）：换词时收起并清内容，防跨词串台 */
+  var wfd=document.getElementById('wFam');
+  if(wfd&&wfd.open) wfd.open=false;
+  var wfb=document.getElementById('wFamBody');
+  if(wfb){ wfb.innerHTML='（展开加载）'; if(wfb.dataset) delete wfb.dataset.word; }
   $('#wCount').textContent=(wIdx+1)+' / '+wGroup.length;
   $('#wBar').style.width=(wIdx/wGroup.length*100)+'%';
   $('#wWord').textContent=cur.w;
@@ -3715,6 +3732,86 @@ function renderGroupDone(){
   $('#wJudge').style.display='none';
   $('#wAgain').style.display='block';
   renderWordStats();
+}
+/* ---------- 词汇解说（v1.12.1）：同根词/易混词本地计算 + 固定搭配 AI 生成（localStorage 缓存） ---------- */
+function levDist(a,b){
+  if(a===b) return 0;
+  var m=a.length,n=b.length; if(!m||!n) return m||n;
+  if(Math.abs(m-n)>3) return 99;
+  var prev=[],cur=[],i,j,tmp,cost;
+  for(j=0;j<=n;j++) prev[j]=j;
+  for(i=1;i<=m;i++){
+    cur[0]=i;
+    for(j=1;j<=n;j++){
+      cost=(a.charAt(i-1)===b.charAt(j-1))?0:1;
+      cur[j]=Math.min(cur[j-1]+1,prev[j]+1,prev[j-1]+cost);
+    }
+    tmp=prev; prev=cur; cur=tmp;
+  }
+  return prev[n];
+}
+function wordFamily(w){
+  var wl=String(w||'').toLowerCase(), out={cog:[],conf:[]}, n=WORD_BANK.length;
+  for(var i=0;i<n;i++){
+    var e=WORD_BANK[i], el=e[0].toLowerCase();
+    if(el===wl) continue;
+    if(el.length>=4&&(el.indexOf(wl)>=0||wl.indexOf(el)>=0)){
+      if(out.cog.length<6) out.cog.push(e);
+      continue;
+    }
+    if(el.length>=4&&el.charAt(0)===wl.charAt(0)&&Math.abs(el.length-wl.length)<=3&&out.conf.length<4&&levDist(wl,el)<=2){
+      out.conf.push(e);
+    }
+  }
+  return out;
+}
+function getCollo(w){ try{ var c=JSON.parse(localStorage.getItem('yt_collo')||'{}'); return c[w]||null; }catch(e){ return null; } }
+function setCollo(w,txt){
+  try{
+    var c=JSON.parse(localStorage.getItem('yt_collo')||'{}');
+    c[w]=txt;
+    var ks=Object.keys(c); if(ks.length>300) delete c[ks[0]];
+    localStorage.setItem('yt_collo',JSON.stringify(c));
+  }catch(e){}
+}
+function parseCollo(t){
+  var s=String(t||'').trim(); if(!s) return null;
+  var lines=s.split(/\n+/).map(function(x){ return x.replace(/^\s*\d+[.、)]\s*/,'').replace(/^\s*[-•*]\s*/,'').trim(); })
+    .filter(function(x){ return x.length>4&&/[—–-]/.test(x); });
+  if(!lines.length) return null;
+  return lines.slice(0,4).map(function(x){ return gmEsc(x); }).join('\n');
+}
+function fillWordFam(){
+  var it=wGroup[wIdx]; if(!it) return;
+  var w=it.w;
+  var body=document.getElementById('wFamBody'); if(!body) return;
+  if(body.dataset.word===w) return;
+  body.dataset.word=w;
+  var fam=wordFamily(w);
+  function chip(e){ return '<span class="wfW">'+gmEsc(e[0])+'</span><i>'+gmEsc(e[2]||'')+'</i>'; }
+  var html='<div class="wfRow"><b>同根词</b>'+(fam.cog.length?fam.cog.map(chip).join(''):'<span class="wfNone">词库内暂无</span>')+'</div>';
+  html+='<div class="wfRow"><b>易混词</b>'+(fam.conf.length?fam.conf.map(chip).join(''):'<span class="wfNone">词库内暂无</span>')+'</div>';
+  var coll=getCollo(w);
+  if(coll){ html+='<div class="wfRow"><b>固定搭配</b><div class="wfColl">'+coll+'</div></div>'; body.innerHTML=html; return; }
+  html+='<div class="wfRow"><b>固定搭配</b><span class="wfColl" id="wCollBusy">AI 生成中…（需已接 AI 并联网）</span></div>';
+  body.innerHTML=html;
+  var sys='你是英语词汇老师。只输出固定搭配列表，每行一个，格式：英文短语 — 中文释义。不要序号，不要解释，不要多余内容。';
+  var usr='单词 "'+w+'" 的 3 个最常用固定搭配';
+  aiChat(sys,usr,45000,12).then(function(t){
+    if((wGroup[wIdx]||{}).w!==w) return;               /* 已切词：丢弃过期响应 */
+    var box=document.getElementById('wCollBusy'); if(!box) return;
+    var parsed=parseCollo(t);
+    if(parsed){ setCollo(w,parsed); box.outerHTML='<div class="wfColl">'+parsed+'</div>'; }
+    else box.outerHTML='<span class="wfNone">（AI 未返回搭配——请确认已接 AI 并联网）</span>';
+  }).catch(function(){
+    if((wGroup[wIdx]||{}).w!==w) return;
+    var box=document.getElementById('wCollBusy'); if(box) box.outerHTML='<span class="wfNone">（搭配生成失败）</span>';
+  });
+}
+var wfdEl=document.getElementById('wFam');
+if(wfdEl&&!wfdEl.__bound){
+  wfdEl.__bound=1;
+  wfdEl.addEventListener('toggle',function(){ if(wfdEl.open) fillWordFam(); });
 }
 /* ---------- 语音：通用 ---------- */
 const TTS_OK = ('speechSynthesis' in window);

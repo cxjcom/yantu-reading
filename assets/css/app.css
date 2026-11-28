@@ -1633,3 +1633,19 @@ body.splash-lock{overflow:hidden;}
   padding:.03em .12em 0 0; margin:0;
   color:var(--cinnabar); font-family:var(--serif); font-weight:700;
 }
+
+/* 词汇解说盒（v1.12.1）：同根词/易混词/固定搭配 */
+.wFam{margin-top:10px;border:1px solid var(--line);border-radius:8px;background:rgba(0,0,0,.03);}
+.wFam summary{cursor:pointer;padding:8px 12px;font-size:12.5px;font-family:var(--serif);color:var(--muted,#8a8378);list-style:none;}
+.wFam summary::-webkit-details-marker{display:none;}
+.wFam summary::before{content:"▸ ";}
+.wFam[open] summary::before{content:"▾ ";}
+.wFamBody{padding:2px 12px 10px;font-size:12.5px;}
+.wfRow{margin:7px 0;}
+.wfRow>b{display:inline-block;color:var(--cinnabar);font-family:var(--serif);margin-right:8px;font-size:12px;}
+.wfW{display:inline-block;border:1px solid var(--line);border-radius:5px;padding:2px 7px;margin:2px 6px 2px 0;background:var(--paper);}
+.wfW+i{font-style:normal;color:var(--muted,#8a8378);margin-right:10px;font-size:11.5px;}
+.wfColl{white-space:pre-wrap;font-size:12.5px;color:var(--ink);margin:0;line-height:1.8;}
+.wfNone{color:var(--muted,#8a8378);font-size:12px;}
+html[data-theme="dark"] .wFam{background:rgba(255,255,255,.04);}
+html[data-theme="dark"] .wfW{background:rgba(255,255,255,.05);}

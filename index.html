@@ -8,8 +8,8 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="assets/css/app.css?v=104">
-<link rel="stylesheet" href="assets/css/motion.css?v=50">
+<link rel="stylesheet" href="assets/css/app.css?v=105">
+<link rel="stylesheet" href="assets/css/motion.css?v=51">
 <title>研途阅读 · 考研英语阅读生成器</title>
 </head>
 <body class="">
@@ -601,6 +601,10 @@
         <div class="wTagWrap"><span class="wTag" id="wSrc" style="display:none;"></span> <span class="wTag" id="wTag"></span></div>
         <div class="wMeaning" id="wMeaning"></div>
         <div class="wEx" id="wEx"></div>
+        <details class="wFam" id="wFam">
+          <summary>📚 同根词 · 易混词 · 固定搭配</summary>
+          <div class="wFamBody" id="wFamBody">（展开加载）</div>
+        </details>
       </div>
       <div id="wDoneBox" style="display:none">
         <div class="wDone">🎉 本轮完成</div>
@@ -705,10 +709,14 @@
       <button data-v="select" class="on">四六级 · 选词填空</button>
       <button data-v="cloze1">考研一 · 完形填空</button>
     </div>
-    <div class="seg" id="clozeLevel" style="margin:2px 2px 16px;">
+    <div class="seg" id="clozeLevel" style="margin:2px 2px 10px;">
       <button data-v="cet4" class="on">四级</button>
       <button data-v="cet6">六级</button>
       <button data-v="kao">考研</button>
+    </div>
+    <div class="seg" id="clozeAiSeg" style="margin:0 2px 16px;">
+      <button data-v="ai">🌐 AI 生成</button>
+      <button data-v="local">📦 本地离线</button>
     </div>
     <div class="clozeCard" id="clozePassage"></div>
     <div id="cloze1Stage" style="display:none;"></div>
@@ -856,10 +864,10 @@
 </main>
 
 <script src="lib/workbuddy-cloud-sdk.global.js"></script>
-<script src="assets/js/core.js?v=130"></script>
-<script src="assets/js/book.js?v=101"></script>
-<script src="assets/js/motion.js?v=50"></script>
-<script src="assets/js/audio.js?v=14"></script>
+<script src="assets/js/core.js?v=131"></script>
+<script src="assets/js/book.js?v=102"></script>
+<script src="assets/js/motion.js?v=51"></script>
+<script src="assets/js/audio.js?v=15"></script>
 <script>
 /* ===== 书房外壳：导航 / 场景题名 / 统计镜像（复用 core 功能，不改变逻辑） ===== */
 (function(){
