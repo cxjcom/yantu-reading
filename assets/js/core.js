@@ -3878,6 +3878,9 @@ async function generateAndShow(){
     }
     showToast('✅ '+aiFallbackNote());
   }
+  /* 本地模式提醒（v1.11.16）：AI_MODE 关着时点生成会直接走本地引擎——
+     用户手机曾因此误以为"AI 坏了"排查数日，加一句明示避免再踩 */
+  if(!AI_MODE) showToast('📦 本地引擎生成中（AI 未开启——如需 AI：点上方「🌐 AI 联网生成」再生成）');
   try{
     const p=buildPassage(curDiff);
     bumpStats(p.wordCount);
